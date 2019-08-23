@@ -8,10 +8,6 @@ MAX_FILES?=65534
 
 all: package
 
-package:
-	git clone https://github.com/packpack/packpack.git packpack
-	./packpack/packpack
-
 test: test_$(TRAVIS_OS_NAME)
 
 # Redirect some targets via docker
@@ -176,34 +172,35 @@ test_freebsd_no_deps: build_freebsd
 
 test_freebsd: deps_freebsd test_freebsd_no_deps
 
-####################
-# Sources tarballs #
-####################
-
-source:
-	git clone https://github.com/packpack/packpack.git packpack
-	TARBALL_COMPRESSOR=gz packpack/packpack tarball
+###############################
+# Sources tarballs & packages #
+###############################
 
 # Push alpha and beta versions to <major>x bucket (say, 2x),
 # stable to <major>.<minor> bucket (say, 2.2).
-ifeq ($(TRAVIS_BRANCH),master)
 GIT_DESCRIBE=$(shell git describe HEAD)
 MAJOR_VERSION=$(word 1,$(subst ., ,$(GIT_DESCRIBE)))
 MINOR_VERSION=$(word 2,$(subst ., ,$(GIT_DESCRIBE)))
-else
-MAJOR_VERSION=$(word 1,$(subst ., ,$(TRAVIS_BRANCH)))
-MINOR_VERSION=$(word 2,$(subst ., ,$(TRAVIS_BRANCH)))
-endif
-BUCKET=tarantool.$(MAJOR_VERSION).$(MINOR_VERSION).src
+BUCKET=$(MAJOR_VERSION)_$(MINOR_VERSION)
 ifeq ($(MINOR_VERSION),0)
-BUCKET=tarantool.$(MAJOR_VERSION)x.src
+BUCKET=$(MAJOR_VERSION)x
 endif
 ifeq ($(MINOR_VERSION),1)
-BUCKET=tarantool.$(MAJOR_VERSION)x.src
+BUCKET=$(MAJOR_VERSION)x
 endif
+
+packpack_prepare:
+	git clone https://github.com/packpack/packpack.git packpack
+
+package: packpack_prepare
+	./packpack/packpack
+
+source: packpack_prepare
+	TARBALL_COMPRESSOR=gz packpack/packpack tarball
 
 source_deploy:
 	pip install awscli --user
-	aws --endpoint-url "${AWS_S3_ENDPOINT_URL}" s3 \
-		cp build/*.tar.gz "s3://${BUCKET}/" \
-		--acl public-read
+	for tarball in `ls build/*.tar.gz 2>/dev/null` ; \
+		aws --endpoint-url "${AWS_S3_ENDPOINT_URL}" s3 \
+			cp ${tarball} "s3://tarantool_repo/${BUCKET}/sources/" \
+			--acl public-read

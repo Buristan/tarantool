@@ -98,13 +98,27 @@ vms_test_%:
 vms_shutdown:
 	VBoxManage controlvm ${VMS_NAME} poweroff
 
-# ########################
-# Build RPM / Deb packages
-# ########################
+# ###########################
+# Sources tarballs & packages
+# ###########################
+
+# Push alpha and beta versions to <major>x bucket (say, 2x),
+# stable to <major>.<minor> bucket (say, 2.2).
+GIT_DESCRIBE=$(shell git describe HEAD)
+MAJOR_VERSION=$(word 1,$(subst ., ,$(GIT_DESCRIBE)))
+MINOR_VERSION=$(word 2,$(subst ., ,$(GIT_DESCRIBE)))
+BUCKET=$(MAJOR_VERSION)_$(MINOR_VERSION)
+ifeq ($(MINOR_VERSION),0)
+BUCKET=$(MAJOR_VERSION)x
+endif
+ifeq ($(MINOR_VERSION),1)
+BUCKET=$(MAJOR_VERSION)x
+endif
 
 package: git_submodule_update
 	git clone https://github.com/packpack/packpack.git packpack
 	PACKPACK_EXTRA_DOCKER_RUN_PARAMS='--network=host' ./packpack/packpack
+	./tools/add_pack_s3_repo.sh -b=${BUCKET} -o=${OS} -d=${DIST} build
 
 # ############
 # Static build

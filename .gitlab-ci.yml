@@ -237,7 +237,10 @@ debian_10:
     DIST: 'buster'
 
 static_build:
-  <<: *deploy_test_definition
+  <<: *release_only_definition
+  stage: test
+  tags:
+    - deploy_test
   variables:
     RUN_TESTS: 'ON'
   script:
