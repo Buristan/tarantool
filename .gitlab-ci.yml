@@ -1,8 +1,12 @@
 stages:
+  - bootstrap
   - test
+  - cleanup
 
 variables:
   GITLAB_MAKE: "make -f .gitlab.mk"
+  IMAGE_PERF: "${CI_REGISTRY}/${CI_PROJECT_PATH}/perf/ubuntu-bionic:perf_master"
+  IMAGE_PERF_BUILT: "${CI_REGISTRY}/${CI_PROJECT_PATH}/perf_tmp/ubuntu-bionic:perf_${CI_COMMIT_SHORT_SHA}"
 
 # Jobs templates
 
@@ -137,6 +141,147 @@ freebsd_12_release:
     MAKE: 'gmake'
   script:
     - ${GITLAB_MAKE} vms_test_freebsd
+
+# Perf
+
+perf_bootstrap:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  stage: bootstrap
+  tags:
+    - perf
+  script:
+    - ${GITLAB_MAKE} docker_perf_bootstrap
+
+perf_sysbench:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  script:
+    - ${GITLAB_MAKE} perf_sysbench
+
+perf_tpcc:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  script:
+    - ${GITLAB_MAKE} perf_tpcc
+
+perf_ycsb_hash:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  variables:
+    TYPE: 'hash'
+  script:
+    - ${GITLAB_MAKE} perf_ycsb
+
+perf_ycsb_tree:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  variables:
+    TYPE: 'tree'
+  script:
+    - ${GITLAB_MAKE} perf_ycsb
+
+perf_nosqlbench_hash:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  variables:
+    TYPE: 'hash'
+  script:
+    - ${GITLAB_MAKE} perf_nosqlbench
+
+perf_nosqlbench_tree:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  variables:
+    TYPE: 'tree'
+  script:
+    - ${GITLAB_MAKE} perf_nosqlbench
+
+perf_cbench:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf
+  script:
+    - ${GITLAB_MAKE} perf_cbench
+
+perf_linkbench:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf_hdd
+  script:
+    - ${GITLAB_MAKE} perf_linkbench
+
+perf_linkbench_ssd:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  image: ${IMAGE_PERF_BUILT}
+  stage: test
+  tags:
+    - docker_perf_ssd
+  script:
+    - ${GITLAB_MAKE} perf_linkbench
+
+remove_images:
+  only:
+    refs:
+      - master
+      - /^.*-perf$/
+  stage: cleanup
+  when: always
+  tags:
+    - perf
+  script:
+    - ${GITLAB_MAKE} docker_perf_tmp_image_remove
 
 # Packs
 
