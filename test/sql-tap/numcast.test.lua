@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 test = require("sqltester")
-test:plan(20)
+test:plan(31)
 
 --!./tcltestrunner.lua
 -- 2013 March 20
@@ -145,6 +145,109 @@ test:do_catchsql_test(
         SELECT * FROM t;
     ]], {
         1,"Tuple field 1 type does not match one required by operation: expected integer"
+    })
+
+--
+-- gh-4233: Make sure that NUMBER can contain UNSIGNED, INTEGER
+-- and DOUBLE and is not automatically converted to DOUBLE.
+--
+test:do_execsql_test(
+    "numcast-2.1",
+    [[
+        CREATE TABLE t1 (id INT PRIMARY KEY, n NUMBER);
+        INSERT INTO t1 VALUES (1, 9223372036854775807);
+        INSERT INTO t1 VALUES (2, -9223372036854775807);
+        INSERT INTO t1 VALUES (3, 9223372036854775807.1);
+        SELECT n, n/100 FROM t1;
+    ]], {
+        9223372036854775807ULL, 92233720368547758ULL,
+        -9223372036854775807LL, -92233720368547758LL,
+        9223372036854775808, 92233720368547758.08
+    })
+
+test:do_execsql_test(
+    "numcast-2.2",
+    [[
+        CREATE TABLE t2(a NUMBER primary key);
+        INSERT INTO t2 VALUES(-56);
+        INSERT INTO t2 VALUES(44.0);
+        INSERT INTO t2 VALUES(46);
+        INSERT INTO t2 VALUES(56.0);
+        SELECT (a + 25) / 50 FROM t2;
+    ]], {
+        0,1.38,1,1.62
+    })
+
+test:do_execsql_test(
+    "numcast-2.3",
+    [[
+        SELECT CAST(x'3131313131313131313131313131313131313131' AS NUMBER);
+    ]], {
+        11111111111111111111ULL
+    })
+
+test:do_execsql_test(
+    "numcast-2.4",
+    [[
+        SELECT CAST(x'31313131313131313131313131313131313131312E' AS NUMBER);
+    ]], {
+        11111111111111110656
+    })
+
+test:do_execsql_test(
+    "numcast-2.5",
+    [[
+        SELECT CAST('11111111111111111111' AS NUMBER);
+    ]], {
+        11111111111111111111ULL
+    })
+
+test:do_execsql_test(
+    "numcast-2.6",
+    [[
+        SELECT CAST('101' AS NUMBER) / 10, CAST('101.' AS NUMBER) / 10;
+    ]], {
+        10, 10.1
+    })
+
+test:do_execsql_test(
+    "numcast-2.7",
+    [[
+        SELECT CAST('101     ' AS NUMBER) / 10, CAST('      101' AS NUMBER) / 10;
+    ]], {
+        10, 10
+    })
+
+test:do_execsql_test(
+    "numcast-2.8",
+    [[
+        SELECT (1 + 0) / 3, (1 + 0.) / 3, (1 + 0) / 3.;
+    ]], {
+        0, 0.33333333333333, 0.33333333333333
+    })
+
+test:do_execsql_test(
+    "numcast-2.9",
+    [[
+        SELECT (1 - 0) / 3, (1 - 0.) / 3, (1 - 0) / 3.;
+    ]], {
+        0, 0.33333333333333, 0.33333333333333
+    })
+
+test:do_execsql_test(
+    "numcast-2.10",
+    [[
+        SELECT (1 * 1) / 3, (1 * 1.) / 3, (1 * 1) / 3.;
+    ]], {
+        0, 0.33333333333333, 0.33333333333333
+    })
+
+test:do_execsql_test(
+    "numcast-2.11",
+    [[
+        SELECT (1 / 1) / 3, (1 / 1.) / 3, (1 / 1) / 3.;
+    ]], {
+        0, 0.33333333333333, 0.33333333333333
     })
 
 test:finish_test()

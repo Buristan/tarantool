@@ -386,7 +386,7 @@ test:do_execsql_test("select3-8.1", [[
   SELECT typeof(sum(a3)) FROM a;
 ]], {
   -- <select3-8.1>
-  "number"
+  "integer"
   -- </select3-8.1>
 })
 

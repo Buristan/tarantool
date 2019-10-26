@@ -531,7 +531,6 @@ int sqlVdbeRealValue(Mem *, double *);
 int
 mem_value_bool(const struct Mem *mem, bool *b);
 
-int mem_apply_integer_type(Mem *);
 int sqlVdbeMemRealify(Mem *);
 int sqlVdbeMemNumerify(Mem *);
 int sqlVdbeMemCast(Mem *, enum field_type type);

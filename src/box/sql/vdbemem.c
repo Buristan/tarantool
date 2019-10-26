@@ -534,23 +534,6 @@ mem_value_bool(const struct Mem *mem, bool *b)
 }
 
 /*
- * The MEM structure is already a MEM_Real.  Try to also make it a
- * MEM_Int if we can.
- */
-int
-mem_apply_integer_type(Mem *pMem)
-{
-	int rc;
-	i64 ix;
-	assert(pMem->flags & MEM_Real);
-	assert(EIGHT_BYTE_ALIGNMENT(pMem));
-
-	if ((rc = doubleToInt64(pMem->u.r, (int64_t *) &ix)) == 0)
-		mem_set_int(pMem, ix, pMem->u.r <= -1);
-	return rc;
-}
-
-/*
  * Convert pMem to type integer.  Invalidate any prior representations.
  */
 int
@@ -608,18 +591,16 @@ int
 sqlVdbeMemNumerify(Mem * pMem)
 {
 	if ((pMem->flags & (MEM_Int | MEM_UInt | MEM_Real | MEM_Null)) == 0) {
-		assert((pMem->flags & (MEM_Blob | MEM_Str)) != 0);
+		if ((pMem->flags & (MEM_Blob | MEM_Str)) == 0)
+			return -1;
 		bool is_neg;
 		int64_t i;
 		if (sql_atoi64(pMem->z, &i, &is_neg, pMem->n) == 0) {
 			mem_set_int(pMem, i, is_neg);
 		} else {
-			double v;
-			if (sqlVdbeRealValue(pMem, &v))
+			if (sqlAtoF(pMem->z, &pMem->u.r, pMem->n) == 0)
 				return -1;
-			pMem->u.r = v;
 			MemSetTypeFlag(pMem, MEM_Real);
-			mem_apply_integer_type(pMem);
 		}
 	}
 	assert((pMem->flags & (MEM_Int | MEM_UInt | MEM_Real | MEM_Null)) != 0);
@@ -676,22 +657,6 @@ sqlVdbeMemCast(Mem * pMem, enum field_type type)
 	assert(type < field_type_MAX);
 	if (pMem->flags & MEM_Null)
 		return 0;
-	if ((pMem->flags & MEM_Blob) != 0 && type == FIELD_TYPE_NUMBER) {
-		bool is_neg;
-		if (sql_atoi64(pMem->z,  (int64_t *) &pMem->u.i, &is_neg,
-			       pMem->n) == 0) {
-			MemSetTypeFlag(pMem, MEM_Real);
-			if (is_neg)
-				pMem->u.r = pMem->u.i;
-			else
-				pMem->u.r = pMem->u.u;
-			return 0;
-		}
-		if (sqlAtoF(pMem->z, &pMem->u.r, pMem->n) == 0)
-			return -1;
-		MemSetTypeFlag(pMem, MEM_Real);
-		return 0;
-	}
 	switch (type) {
 	case FIELD_TYPE_SCALAR:
 		return 0;
@@ -742,8 +707,9 @@ sqlVdbeMemCast(Mem * pMem, enum field_type type)
 			return -1;
 		return 0;
 	case FIELD_TYPE_DOUBLE:
-	case FIELD_TYPE_NUMBER:
 		return sqlVdbeMemRealify(pMem);
+	case FIELD_TYPE_NUMBER:
+		return sqlVdbeMemNumerify(pMem);
 	case FIELD_TYPE_VARBINARY:
 		if ((pMem->flags & MEM_Blob) != 0)
 			return 0;
