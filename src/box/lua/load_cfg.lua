@@ -517,10 +517,14 @@ setmetatable(box, {
      end
 })
 
+-- Flag needed to keep immutable functions after box reconfiguration
+local box_loaded = false
+
 local function load_cfg(cfg)
     cfg = upgrade_cfg(cfg, translate_cfg)
     cfg = prepare_cfg(cfg, default_cfg, template_cfg, modify_cfg)
     apply_default_cfg(cfg, default_cfg);
+    box_loaded = true
     -- Save new box.cfg
     box.cfg = cfg
     if not pcall(private.cfg_check)  then
@@ -564,7 +568,16 @@ box.cfg = locked(load_cfg)
 -- metatable.
 --
 function box.execute(...)
-    load_cfg()
+    --
+    -- Calling box.execute before explicitly configuring box led to
+    -- automatic box.cfg invocation nonetheless. Following explicit
+    -- attempts to configure box led to its reconfiguration and as a
+    -- result - to an error when trying to use execute method again.
+    -- The check makes sure box.execute is an immutable function.
+    --
+    if not box_loaded then
+        load_cfg()
+    end
     return box.execute(...)
 end
 
