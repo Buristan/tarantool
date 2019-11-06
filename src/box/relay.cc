@@ -765,7 +765,7 @@ relay_send_row(struct xstream *stream, struct xrow_header *packet)
 		 * skip all these rows.
 		 */
 		if (packet->replica_id == REPLICA_ID_NIL)
-			return;
+			return 0;
 		packet->type = IPROTO_NOP;
 		packet->group_id = GROUP_DEFAULT;
 		packet->bodycnt = 0;
