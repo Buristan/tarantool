@@ -1579,14 +1579,6 @@ box_process_register(struct ev_io *io, struct xrow_header *header)
 	xrow_encode_vclock_xc(&row, &replicaset.vclock);
 	row.sync = header->sync;
 	coio_write_xrow(io, &row);
-
-	/*
-	 * Advance the WAL consumer state to the position where
-	 * registration was complete and assign it to the
-	 * replica.
-	 */
-	replica = replica_by_uuid(&instance_uuid);
-	wal_relay_status_update(replica->id, &stop_vclock);
 }
 
 void
@@ -1731,7 +1723,6 @@ box_process_join(struct ev_io *io, struct xrow_header *header)
 	if (coio_write_xrow(io, &row) < 0)
 		diag_raise();
 	replica = replica_by_uuid(&instance_uuid);
-	wal_relay_status_update(replica->id, &stop_vclock);
 }
 
 void
