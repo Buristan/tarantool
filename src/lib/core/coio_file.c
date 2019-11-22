@@ -30,6 +30,7 @@
  */
 #include "coio_file.h"
 #include "coio_task.h"
+#include "popen.h"
 #include "fiber.h"
 #include "say.h"
 #include "fio.h"
@@ -103,6 +104,15 @@ struct coio_file_task {
 			const char *source;
 			const char *dest;
 		} copyfile;
+
+		struct {
+			struct popen_handle *handle;
+			struct popen_opts *opts;
+			unsigned int flags;
+			int timeout_msecs;
+			size_t count;
+			void *buf;
+		} popen;
 	};
 };
 
@@ -638,4 +648,109 @@ coio_utime(const char *pathname, double atime, double mtime)
 	INIT_COEIO_FILE(eio);
 	eio_req *req = eio_utime(pathname, atime, mtime, 0, coio_complete, &eio);
 	return coio_wait_done(req, &eio);
+}
+
+static void
+coio_do_popen_read(eio_req *req)
+{
+	struct coio_file_task *eio = req->data;
+	req->result = popen_read_timeout(eio->popen.handle,
+					 eio->popen.buf,
+					 eio->popen.count,
+					 eio->popen.flags,
+					 eio->popen.timeout_msecs);
+}
+
+ssize_t
+coio_popen_read(void *handle, void *buf, size_t count,
+		unsigned int flags, int timeout_msecs)
+{
+	INIT_COEIO_FILE(eio);
+	ssize_t res = -1;
+
+	eio.popen.timeout_msecs = timeout_msecs;
+	eio.popen.handle = handle;
+	eio.popen.flags	= flags;
+	eio.popen.count	= count;
+	eio.popen.buf = buf;
+
+	while (res < 0) {
+		eio_req *req = eio_custom(coio_do_popen_read,
+					  EIO_PRI_DEFAULT,
+					  coio_complete, &eio);
+		res = coio_wait_done(req, &eio);
+		if (res < 0) {
+			if (!popen_should_retry_io(errno))
+				break;
+			eio.done = false;
+		}
+	}
+
+	return res;
+}
+
+static void
+coio_do_popen_write(eio_req *req)
+{
+	struct coio_file_task *eio = req->data;
+	req->result = popen_write(eio->popen.handle,
+				  eio->popen.buf,
+				  eio->popen.count,
+				  eio->popen.flags);
+}
+
+ssize_t
+coio_popen_write(void *handle, void *buf, size_t count,
+		 unsigned int flags)
+{
+	ssize_t left = count, pos = 0;
+	INIT_COEIO_FILE(eio);
+
+	eio.popen.handle = handle;
+	eio.popen.flags	= flags;
+
+	while (left > 0) {
+		eio.popen.count	= left;
+		eio.popen.buf = buf + pos;
+
+		eio_req *req = eio_custom(coio_do_popen_write,
+					  EIO_PRI_DEFAULT,
+					  coio_complete, &eio);
+		ssize_t res = coio_wait_done(req, &eio);
+		if (res < 0) {
+			if (!popen_should_retry_io(errno)) {
+				pos = -1;
+				break;
+			}
+			eio.done = false;
+			continue;
+		}
+		left -= res;
+		pos += res;
+	}
+
+	return pos;
+}
+
+static void
+do_coio_popen_new(eio_req *req)
+{
+	struct coio_file_task *eio = req->data;
+
+	eio->popen.handle = popen_new(eio->popen.opts);
+	req->result = eio->popen.handle ? 0 : -1;
+}
+
+void *
+coio_popen_new(struct popen_opts *opts)
+{
+	INIT_COEIO_FILE(eio);
+	eio.popen.opts = opts;
+
+	eio_req *req = eio_custom(do_coio_popen_new,
+				  EIO_PRI_DEFAULT,
+				  coio_complete, &eio);
+	coio_wait_done(req, &eio);
+
+	return eio.popen.handle;
 }
