@@ -52,6 +52,16 @@
 	luaT_push_nil_and_error(L);				\
 })
 
+static inline int
+lbox_fio_push_error(struct lua_State *L)
+{
+	diag_set(SystemError, "fio: %s", strerror(errno));
+	struct error *e = diag_last_error(diag_get());
+	assert(e != NULL);
+	luaT_pusherror(L, e);
+	return 1;
+}
+
 static int
 lbox_fio_open(struct lua_State *L)
 {
@@ -118,10 +128,7 @@ lbox_fio_pushbool(struct lua_State *L, bool res)
 {
 	lua_pushboolean(L, res);
 	if (!res) {
-		diag_set(SystemError, "fio: %s", strerror(errno));
-		struct error *e = diag_last_error(diag_get());
-		assert(e != NULL);
-		luaT_pusherror(L, e);
+		lbox_fio_push_error(L);
 		return 2;
 	}
 	return 1;
