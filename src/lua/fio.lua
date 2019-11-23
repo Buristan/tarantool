@@ -5,6 +5,7 @@ local ffi = require('ffi')
 local buffer = require('buffer')
 local fiber = require('fiber')
 local errno = require('errno')
+local bit = require('bit')
 
 ffi.cdef[[
     int umask(int mask);
@@ -517,6 +518,439 @@ end
 
 fio.path.lexists = function(filename)
     return fio.lstat(filename) ~= nil
+end
+
+local popen_methods = { }
+
+--
+-- Make sure the bits are matching POPEN_FLAG_x
+-- flags in popen header. This is api but internal
+-- one, we should not make it visible to users.
+local popen_flag_bits = {
+    STDIN           = 0,
+    STDOUT          = 1,
+    STDERR          = 2,
+
+    STDIN_DEVNULL   = 3,
+    STDOUT_DEVNULL  = 4,
+    STDERR_DEVNULL  = 5,
+
+    STDIN_CLOSE     = 6,
+    STDOUT_CLOSE    = 7,
+    STDERR_CLOSE    = 8,
+
+    SHELL           = 9,
+}
+
+local popen_flags = {
+    NONE            = 0,
+    STDIN           = bit.lshift(1, popen_flag_bits.STDIN),
+    STDOUT          = bit.lshift(1, popen_flag_bits.STDOUT),
+    STDERR          = bit.lshift(1, popen_flag_bits.STDERR),
+
+    STDIN_DEVNULL   = bit.lshift(1, popen_flag_bits.STDIN_DEVNULL),
+    STDOUT_DEVNULL  = bit.lshift(1, popen_flag_bits.STDOUT_DEVNULL),
+    STDERR_DEVNULL  = bit.lshift(1, popen_flag_bits.STDERR_DEVNULL),
+
+    STDIN_CLOSE     = bit.lshift(1, popen_flag_bits.STDIN_CLOSE),
+    STDOUT_CLOSE    = bit.lshift(1, popen_flag_bits.STDOUT_CLOSE),
+    STDERR_CLOSE    = bit.lshift(1, popen_flag_bits.STDERR_CLOSE),
+
+    SHELL           = bit.lshift(1, popen_flag_bits.SHELL),
+}
+
+--
+-- Close a popen object and release all resources.
+-- In case if there is a running child process
+-- it will be killed.
+--
+-- Returns @ret = true if popen handle closed, and
+-- @ret = false, @err ~= nil on error.
+popen_methods.close = function(self)
+    local ret, err = internal.popen_destroy(self.popen_handle)
+    if ret == true and err == nil then
+        self.popen_handle = nil
+    end
+    return ret, err
+end
+
+--
+-- Kill a child process
+--
+-- Returns @ret = true on success,
+-- @ret = false, @err ~= nil on error.
+popen_methods.kill = function(self)
+    return internal.popen_kill(self.popen_handle)
+end
+
+--
+-- Fetch a child process status
+--
+-- Returns @err = nil, @reason = (1 - if exited,
+-- 2 - if killed by a signal) and @exit_code ~= nil,
+-- otherwise @err ~= nil.
+--
+-- FIXME: Should the @reason be a named constant?
+popen_methods.status = function(self)
+    return internal.popen_status(self.popen_handle)
+end
+
+--
+-- Wait until a child process finished its work
+-- and exit then.
+--
+-- Since it goes via coio thread we can't simply
+-- call wait4 (or similar) directly to not block
+-- the whole i/o subsystem. Instead we do an explicit
+-- polling for status change with predefined period
+-- of sleeping.
+--
+-- Returns the same as popen_methods.status.
+popen_methods.wait = function(self)
+    local err, reason, code
+    while true do
+        err, reason, code = internal.popen_status(self.popen_handle)
+        if err or reason then
+            break
+        end
+        fiber.sleep(self.wait_secs)
+    end
+    return err, reason, code
+end
+
+--
+-- A map for popen option keys into tfn ('true|false|nil') values
+-- where bits are just set without additional manipulations.
+--
+-- For example stdin=true means to open stdin end for write,
+-- stdin=false to close the end, finally stdin[=nil] means to
+-- provide /dev/null into a child peer.
+local popen_opts_tfn = {
+    stdin = {
+        popen_flags.STDIN,
+        popen_flags.STDIN_CLOSE,
+        popen_flags.STDIN_DEVNULL,
+    },
+    stdout = {
+        popen_flags.STDOUT,
+        popen_flags.STDOUT_CLOSE,
+        popen_flags.STDOUT_DEVNULL,
+    },
+    stderr = {
+        popen_flags.STDERR,
+        popen_flags.STDERR_CLOSE,
+        popen_flags.STDERR_DEVNULL,
+    },
+}
+
+--
+-- A map for popen option keys into tf ('true|false') values
+-- where bits are set on 'true' and clear on 'false'.
+local popen_opts_tf = {
+    shell = {
+        popen_flags.SHELL,
+    },
+}
+
+--
+-- Parses opts table with keys from popen_opts_tfn.
+-- Values could be true, false or nil.
+local function parse_popen_opts(flags, opts)
+    if opts == nil then
+        return flags
+    end
+    for k,v in pairs(opts) do
+        if popen_opts_tfn[k] == nil then
+            if popen_opts_tf[k] == nil then
+                error(string.format("fio.popen: Unknown key %s", k))
+            end
+            if v == true then
+                flags = bit.bor(flags, popen_opts_tf[k][1])
+            elseif v == false then
+                flags = bit.band(flags, bit.bnot(popen_opts_tf[k][1]))
+            else
+                error(string.format("fio.popen: Unknown value %s", v))
+            end
+        else
+            if v == true then
+                flags = bit.band(flags, bit.bnot(popen_opts_tfn[k][2]))
+                flags = bit.band(flags, bit.bnot(popen_opts_tfn[k][3]))
+                flags = bit.bor(flags, popen_opts_tfn[k][1])
+            elseif v == false then
+                flags = bit.band(flags, bit.bnot(popen_opts_tfn[k][1]))
+                flags = bit.band(flags, bit.bnot(popen_opts_tfn[k][3]))
+                flags = bit.bor(flags, popen_opts_tfn[k][2])
+            elseif v == "devnull" then
+                flags = bit.band(flags, bit.bnot(popen_opts_tfn[k][1]))
+                flags = bit.band(flags, bit.bnot(popen_opts_tfn[k][2]))
+                flags = bit.bor(flags, popen_opts_tfn[k][3])
+            else
+                error(string.format("fio.popen: Unknown value %s", v))
+            end
+        end
+    end
+    return flags
+end
+
+--
+-- popen:read2 - read stream of a child with options
+-- @opts:       options table
+--
+-- The options should have the following keys
+--
+-- @flags:          stdout=true or stderr=true
+-- @buf:            const_char_ptr_t buffer
+-- @size:           size of the buffer
+-- @timeout_msecs:  read timeout in microsecond
+--
+-- Returns @res = bytes, err = nil in case if read processed
+-- without errors, @res = nil, @err = nil if timeout elapsed
+-- and no data appeared on the peer, @res = nil, @err ~= nil
+-- otherwise.
+popen_methods.read2 = function(self, opts)
+    --
+    -- We can reuse parse_popen_opts since only
+    -- a few flags we're interesed in -- stdout/stderr
+    local flags = parse_popen_opts(popen_flags.NONE, opts['flags'])
+    local timeout_msecs = -1
+    if opts['buf'] == nil then
+        error("fio.popen:read2 {'buf'} key is missed")
+    elseif opts['size'] == nil then
+        error("fio.popen:read2 {'size'} key is missed")
+    elseif opts['timeout_msecs'] ~= nil then
+        timeout_msecs = tonumber(opts['timeout_msecs'])
+    end
+
+    return internal.popen_read(self.popen_handle, opts['buf'],
+                               tonumber(opts['size']),
+                               timeout_msecs, flags)
+end
+
+-- popen:write2 - write data to a child with options
+-- @opts:       options table
+--
+-- The options should have the following keys
+--
+-- @flags:      stdin=true
+-- @buf:        const_char_ptr_t buffer
+-- @size:       size of the buffer
+--
+-- Returns @res = bytes, err = nil in case if write processed
+-- without errors, or @res = nil, @err ~= nil otherwise.
+popen_methods.write2 = function(self, opts)
+    local flags = parse_popen_opts(popen_flags.NONE, opts['flags'])
+    if opts['buf'] == nil then
+        error("fio.popen:write2 {'buf'} key is missed")
+    elseif opts['size'] == nil then
+        error("fio.popen:write2 {'size'} key is missed")
+    end
+    return internal.popen_write(self.popen_handle, opts['buf'],
+                                tonumber(opts['size']), flags)
+end
+
+--
+-- Write data to stdin of a child process
+-- @buf:        a buffer to write
+-- @size:       size of the buffer
+--
+-- Both parameters are optional and some
+-- string could be passed instead
+--
+-- write(str)
+-- write(buf, len)
+--
+-- Returns @res = bytes, @err = nil in case of success,
+-- @res = , @err ~= nil in case of error.
+popen_methods.write = function(self, buf, size)
+    if not ffi.istype(const_char_ptr_t, buf) then
+        buf = tostring(buf)
+        size = #buf
+    end
+    return self:write2({ buf = buf, size = size,
+                       flags = { stdin = true }})
+end
+
+--
+-- popen:read - read the output stream in blocked mode
+-- @buf:            a buffer to read to, optional
+-- @size:           size of the buffer, optional
+-- @opts:           options table, optional
+--
+-- The options may have the following keys:
+--
+-- @flags:          stdout=true or stderr=true,
+--                  to specify which stream to read;
+--                  by default stdout is used
+-- @timeout_msecs:  read timeout in microcesonds, when
+--                  specified the read will be interrupted
+--                  after specified time elapced, to make
+--                  nonblocking read; de default the read
+--                  is blocking operation
+--
+-- The following variants are accepted as well
+--
+--  read()          -> str
+--  read(buf)       -> len
+--  read(size)      -> str
+--  read(buf, size) -> len
+--
+-- FIXME: Should we merged it with plain fio.write()?
+popen_methods.read = function(self, buf, size, opts)
+    local tmpbuf
+
+    -- read() or read(buf)
+    if (not ffi.istype(const_char_ptr_t, buf) and buf == nil) or
+        (ffi.istype(const_char_ptr_t, buf) and size == nil) then
+        -- read @self.read_buf_size bytes at once if nothing specified
+        -- FIXME: should it be configurable on popen creation?
+        size = self.read_buf_size
+    end
+
+    -- read(size)
+    if not ffi.istype(const_char_ptr_t, buf) then
+        size = buf or size
+        tmpbuf = buffer.ibuf()
+        buf = tmpbuf:reserve(size)
+    end
+
+    if opts == nil then
+        opts = {
+            timeout_msecs = -1,
+            flags = { stdout = true },
+        }
+    end
+
+    local res, err = self:read2({ buf = buf, size = size,
+                                timeout_msecs = opts['timeout_msecs'],
+                                flags = opts['flags'] })
+
+    if res == nil then
+        if tmpbuf ~= nil then
+            tmpbuf:recycle()
+        end
+        return nil, err
+    end
+
+    if tmpbuf ~= nil then
+        tmpbuf:alloc(res)
+        res = ffi.string(tmpbuf.rpos, tmpbuf:size())
+        tmpbuf:recycle()
+    end
+
+    return res
+end
+
+--
+-- popen:info -- obtain information about a popen object
+--
+-- Returns @info table, err == nil on success,
+-- @info = nil, @err ~= nil otherwise.
+--
+-- The @info table contains the following keys:
+--
+-- @pid:        pid of a child process
+-- @flags:      flags associated (popen_flags bitmap)
+-- @stdout:     parent peer for stdout, -1 if closed
+-- @stderr:     parent peer for stderr, -1 if closed
+-- @stdin:      parent peer for stdin, -1 if closed
+-- @state:      alive | exited | signaled | unknown
+-- @exit_code:  exit code of a child process if been
+--              exited or killed by a signal
+--
+-- The child should never be in "unknown" state, reserved
+-- for unexpected errors.
+--
+popen_methods.info = function(self)
+    return internal.popen_info(self.popen_handle)
+end
+
+local popen_mt = { __index = popen_methods }
+
+--
+-- fio.popen - create a new child process and execute a command inside
+-- @command:    a command to run
+-- @mode:       r - to grab child's stdout for read,
+--              w - to obtain stdin for write
+-- @...:        optional parameters table:
+--
+--  stdin=true      alias for @mode=w
+--  stdin=false     to close STDIN_FILENO inside a child process [*]
+--  stdin="devnull" the child will get /dev/null as STDIN_FILENO
+--
+--  stdout=true     alias for @mode=r
+--  stdout=false    to close STDOUT_FILENO inside a child process [*]
+--  stdin="devnull" the child will get /dev/null as STDOUT_FILENO
+--
+--  stderr=true     to read STDERR_FILENO from a child process
+--  stderr=false    to close STDERR_FILENO inside a child process [*]
+--  stdin="devnull" the child will get /dev/null as STDERR_FILENO
+--
+--  shell=true      runs a child process via "sh -c" [*]
+--  shell=false     invokes a child process executable directly
+--
+-- [*] are default values
+--
+-- Examples:
+--
+--  popen = require('fio').popen("date", "r")
+--      runs date as "sh -c date" to read the output,
+--      closing all file descriptors except stdin inside
+--      a child process
+--
+--  popen = require('fio').popen("/usr/bin/date", "r", {shell=false})
+--      invokes date executable without shell to read the output
+--
+fio.popen = function(command, mode, ...)
+    local flags = popen_flags.NONE
+
+    if type(command) ~= 'string' then
+        error("Usage: fio.popen(command[, rw, {opts}])")
+    end
+
+    -- default flags: close everything and use shell
+    flags = bit.bor(flags, popen_flags.STDIN_CLOSE)
+    flags = bit.bor(flags, popen_flags.STDOUT_CLOSE)
+    flags = bit.bor(flags, popen_flags.STDERR_CLOSE)
+    flags = bit.bor(flags, popen_flags.SHELL)
+
+    for i = 1, #mode do
+        local c = mode:sub(i, i)
+        if c == 'r' then
+            flags = bit.band(flags, bit.bnot(popen_flags.STDOUT_CLOSE))
+            flags = bit.bor(flags, popen_flags.STDOUT)
+        elseif c == 'w' then
+            flags = bit.band(flags, bit.bnot(popen_flags.STDIN_CLOSE))
+            flags = bit.bor(flags, popen_flags.STDIN)
+        else
+            error(string.format("fio.popen: Unknown mode %s", c))
+        end
+    end
+
+    --
+    -- Options table can override the mode option
+    if ... ~= nil then
+        flags = parse_popen_opts(flags, ...)
+    end
+
+    local handle, err = internal.popen_create(command, flags)
+    if err ~= nil then
+        return nil, err
+    end
+
+    local popen_handle = {
+        -- a handle itself for future use
+        popen_handle = handle,
+
+        -- sleeping period for the @wait method
+        wait_secs = 1,
+
+        -- size of a read buffer to allocate
+        -- in case of implicit read
+        read_buf_size = 512,
+    }
+
+    setmetatable(popen_handle, popen_mt)
+    return popen_handle
 end
 
 return fio
