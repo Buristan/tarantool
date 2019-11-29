@@ -95,7 +95,6 @@ luamp_decode_extension_default(struct lua_State *L, const char **data)
 		   (unsigned char) **data);
 }
 
-
 void
 luamp_set_decode_extension(luamp_decode_extension_f handler)
 {

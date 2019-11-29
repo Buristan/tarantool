@@ -186,7 +186,7 @@ struct luaL_serializer {
 	 *  + map - at least one table index is not unsigned integer.
 	 *  + regular array - all array indexes are available.
 	 *  + sparse array - at least one array index is missing.
-	 *  + excessively sparse arrat - the number of values missing
+	 *  + excessively sparse array - the number of values missing
 	 * exceeds the configured ratio.
 	 *
 	 * An array is excessively sparse when **all** the following

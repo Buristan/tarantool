@@ -47,7 +47,7 @@ struct mpstream;
 /**
  * Default instance of msgpack serializer (msgpack = require('msgpack')).
  * This instance is used by all box's Lua/C API bindings (e.g. space:replace()).
- * All changes made by msgpack.cfg{} function are also affect box's bindings
+ * All changes made by msgpack.cfg{} function also affect box's bindings
  * (this is a feature).
  */
 extern struct luaL_serializer *luaL_msgpack_default;
