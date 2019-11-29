@@ -227,9 +227,11 @@ local function encode_r(buf, obj, level)
             return
         end
         local serialize = nil
-        local mt = getmetatable(obj)
-        if mt ~= nil then
-            serialize = mt.__serialize
+        if msgpack.cfg.encode_load_metatables then
+            local mt = getmetatable(obj)
+            if mt ~= nil then
+                serialize = mt.__serialize
+            end
         end
         -- calculate the number of array and map elements in the table
         -- TODO: pairs() aborts JIT
@@ -261,6 +263,19 @@ local function encode_r(buf, obj, level)
         else
             error("Invalid __serialize value")
         end
+    elseif type(obj) == math.huge or type(obj) == -math.huge or 
+        type(obj) == math.nan then
+        if msgpack.cfg.encode_invalid_numbers then
+            if obj == math.huge then
+                obj = 1/0
+            elseif obj == -math.huge then
+                obj = -1/0
+            else
+                obj = 0/0
+            end
+        else
+            encode_nil(buf)
+        end
     elseif obj == nil then
         encode_nil(buf)
     elseif type(obj) == "boolean" then
@@ -278,8 +293,20 @@ local function encode_r(buf, obj, level)
             error("can not encode FFI type: '"..ffi.typeof(obj).."'")
         end
     else
-        error("can not encode Lua type: '"..type(obj).."'")
+        if msgpack.cfg.encode_use_tostring then
+            obj = tostring(obj)
+            if obj then
+                encode_str(buf, obj)
+            else
+                error("can not encode Lua type: '"..type(obj).."'")
+            end
+        else if msgpack.cfg.encode_invalid_as_nil then
+            encode_nil(buf)
+        else
+            error("can not encode Lua type: '"..type(obj).."'")
+        end
     end
+end
 end
 
 local function encode(obj)
@@ -562,6 +589,15 @@ decode_r = function(data)
     elseif c >= 0xe0 then
         return tonumber(ffi.cast('signed char',c)) -- negfixint
     elseif c == 0xc0 then
+        if msgpack.cfg.decode_invalid_numbers then
+            if c == 0/0 then
+                return math.nan
+            elseif c == 1/0 then
+                return math.huge
+            elseif c == -1/0 then
+                return -math.huge
+            end
+        end
         return msgpack.NULL
     elseif c == 0xc2 then
         return false
@@ -628,6 +664,8 @@ return {
     on_encode = on_encode;
     decode_unchecked = decode_unchecked;
     decode = decode_unchecked; -- just for tests
+    cfg = msgpack.cfg;
+    new = msgpack.new; -- for serializer tests to work properly
     internal = {
         encode_fix = encode_fix;
         encode_array = encode_array;

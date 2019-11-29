@@ -150,7 +150,7 @@ local function test_signed(test, s)
 end
 
 local function test_double(test, s)
-    test:plan(s.cfg and 15 or 9)
+    test:plan(s.cfg and 18 or 9)
     rt(test, s, -1.1)
 
     rt(test, s, 3.1415926535898)
@@ -172,23 +172,28 @@ local function test_double(test, s)
     --
     local nan = 0/0
     local inf = 1/0
+    local minf = -1/0
 
     local ss = s.new()
     ss.cfg{encode_invalid_numbers = false}
     test:ok(not pcall(ss.encode, nan), "encode exception on nan")
     test:ok(not pcall(ss.encode, inf), "encode exception on inf")
+    test:ok(not pcall(ss.encode, minf), "encode exception on minf")
 
     ss.cfg{encode_invalid_numbers = true}
     local xnan = ss.encode(nan)
     local xinf = ss.encode(inf)
+    local xminf = ss.encode(minf)
 
     ss.cfg{decode_invalid_numbers = false}
     test:ok(not pcall(ss.decode, xnan), "decode exception on nan")
     test:ok(not pcall(ss.decode, xinf), "decode exception on inf")
+    test:ok(not pcall(ss.decode, xminf), "decode exception on minf")
 
     ss.cfg{decode_invalid_numbers = true}
     rt(test, s, nan)
     rt(test, s, inf)
+    rt(test, s, minf)
 
     ss = nil
 end
