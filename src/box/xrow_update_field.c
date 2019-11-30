@@ -576,9 +576,15 @@ static const struct xrow_update_op_meta op_delete = {
 };
 
 static inline const struct xrow_update_op_meta *
-xrow_update_op_by(char opcode)
+xrow_update_op_by(const char *opcode, uint32_t len, int op_num)
 {
-	switch (opcode) {
+	if (len != 1) {
+error:
+		diag_set(ClientError, ER_UNKNOWN_UPDATE_OP, op_num,
+			 tt_sprintf("\"%.*s\"", len, opcode));
+		return NULL;
+	}
+	switch (*opcode) {
 	case '=':
 		return &op_set;
 	case '+':
@@ -595,13 +601,12 @@ xrow_update_op_by(char opcode)
 	case '!':
 		return &op_insert;
 	default:
-		diag_set(ClientError, ER_UNKNOWN_UPDATE_OP);
-		return NULL;
+		goto error;
 	}
 }
 
 int
-xrow_update_op_decode(struct xrow_update_op *op, int index_base,
+xrow_update_op_decode(struct xrow_update_op *op, int op_num, int index_base,
 		      struct tuple_dictionary *dict, const char **expr)
 {
 	if (mp_typeof(**expr) != MP_ARRAY) {
@@ -620,12 +625,16 @@ xrow_update_op_decode(struct xrow_update_op *op, int index_base,
 			 "update operation name must be a string");
 		return -1;
 	}
-	op->opcode = *mp_decode_str(expr, &len);
-	op->meta = xrow_update_op_by(op->opcode);
+	const char *opcode = mp_decode_str(expr, &len);
+	op->meta = xrow_update_op_by(opcode, len, op_num);
 	if (op->meta == NULL)
 		return -1;
+	op->opcode = *opcode;
 	if (arg_count != op->meta->arg_count) {
-		diag_set(ClientError, ER_UNKNOWN_UPDATE_OP);
+		const char *str = tt_sprintf("wrong number of arguments, "\
+					     "expected %u, got %u",
+					     op->meta->arg_count, arg_count);
+		diag_set(ClientError, ER_UNKNOWN_UPDATE_OP, op_num, str);
 		return -1;
 	}
 	int32_t field_no = 0;
