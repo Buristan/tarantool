@@ -80,8 +80,12 @@ sid_max()
 	return sid_max;
 }
 
+/**
+ * Destroy session of a background fiber when the
+ * fiber is getting destroyed.
+ */
 static int
-session_on_stop(struct trigger *trigger, void * /* event */)
+session_on_fiber_cleanup(struct trigger *trigger, void * /* event */)
 {
 	/*
 	 * Remove on_stop trigger from the fiber, otherwise the
@@ -167,11 +171,10 @@ session_create_on_demand()
 	struct session *s = session_create(SESSION_TYPE_BACKGROUND);
 	if (s == NULL)
 		return NULL;
-	s->fiber_on_stop = {
-		RLIST_LINK_INITIALIZER, session_on_stop, NULL, NULL
-	};
-	/* Add a trigger to destroy session on fiber stop */
-	trigger_add(&fiber()->on_stop, &s->fiber_on_stop);
+	trigger_create(&s->fiber_on_cleanup, session_on_fiber_cleanup,
+		       NULL, NULL);
+	/* Add a trigger to destroy session on fiber cleanup. */
+	trigger_add(&fiber()->on_cleanup, &s->fiber_on_cleanup);
 	credentials_reset(&s->credentials, admin_user);
 	fiber_set_session(fiber(), s);
 	fiber_set_user(fiber(), &s->credentials);

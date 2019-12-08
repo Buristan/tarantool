@@ -325,6 +325,20 @@ fiber_attr_getstacksize(struct fiber_attr *fiber_attr)
 				    fiber_attr_default.stack_size;
 }
 
+void
+fiber_cleanup(struct fiber *f)
+{
+	if (trigger_run(&f->on_cleanup, f) != 0)
+		panic("Fiber cleanup can't fail");
+	/*
+	 * All cleanup triggers are supposed to
+	 * remove themselves. So as no to waste
+	 * time on that here, and to make them all
+	 * work uniformly.
+	 */
+	assert(rlist_empty(&f->on_cleanup));
+}
+
 static void
 fiber_recycle(struct fiber *fiber);
 
@@ -787,7 +801,7 @@ static void
 fiber_reset(struct fiber *fiber)
 {
 	rlist_create(&fiber->on_yield);
-	rlist_create(&fiber->on_stop);
+	rlist_create(&fiber->on_cleanup);
 	fiber->flags = FIBER_DEFAULT_FLAGS;
 #if ENABLE_FIBER_TOP
 	clock_stat_reset(&fiber->clock_stat);
@@ -856,8 +870,7 @@ fiber_loop(MAYBE_UNUSED void *data)
 		       assert(f != fiber);
 		       fiber_wakeup(f);
 	        }
-		if (! rlist_empty(&fiber->on_stop))
-			trigger_run(&fiber->on_stop, fiber);
+		fiber_cleanup(fiber);
 		/* reset pending wakeups */
 		rlist_del(&fiber->state);
 		if (! (fiber->flags & FIBER_IS_JOINABLE))
@@ -1161,7 +1174,7 @@ fiber_destroy(struct cord *cord, struct fiber *f)
 	assert(f != &cord->sched);
 
 	trigger_destroy(&f->on_yield);
-	trigger_destroy(&f->on_stop);
+	trigger_destroy(&f->on_cleanup);
 	rlist_del(&f->state);
 	rlist_del(&f->link);
 	region_destroy(&f->gc);
@@ -1525,8 +1538,8 @@ cord_cojoin(struct cord *cord)
 int
 break_ev_loop_f(struct trigger *trigger, void *event)
 {
-	(void) trigger;
 	(void) event;
+	trigger_clear(trigger);
 	ev_break(loop(), EVBREAK_ALL);
 	return 0;
 }
@@ -1555,7 +1568,7 @@ cord_costart_thread_func(void *arg)
 	 * Got to be in a trigger, to break the loop even
 	 * in case of an exception.
 	 */
-	trigger_add(&f->on_stop, &break_ev_loop);
+	trigger_add(&f->on_cleanup, &break_ev_loop);
 	fiber_set_joinable(f, true);
 	fiber_start(f, ctx.arg);
 	if (!fiber_is_dead(f)) {

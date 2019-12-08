@@ -41,7 +41,7 @@ double too_long_threshold;
 static struct stailq txn_cache = {NULL, &txn_cache.first};
 
 static int
-txn_on_stop(struct trigger *trigger, void *event);
+txn_on_fiber_cleanup(struct trigger *trigger, void *event);
 
 static int
 txn_on_yield(struct trigger *trigger, void *event);
@@ -226,8 +226,9 @@ txn_begin()
 	txn->fiber = NULL;
 	fiber_set_txn(fiber(), txn);
 	/* fiber_on_yield is initialized by engine on demand */
-	trigger_create(&txn->fiber_on_stop, txn_on_stop, NULL, NULL);
-	trigger_add(&fiber()->on_stop, &txn->fiber_on_stop);
+	trigger_create(&txn->fiber_on_cleanup, txn_on_fiber_cleanup,
+		       NULL, NULL);
+	trigger_add(&fiber()->on_cleanup, &txn->fiber_on_cleanup);
 	/*
 	 * By default all transactions may yield.
 	 * It's a responsibility of an engine to disable yields
@@ -550,7 +551,7 @@ txn_prepare(struct txn *txn)
 		if (engine_prepare(txn->engine, txn) != 0)
 			return -1;
 	}
-	trigger_clear(&txn->fiber_on_stop);
+	trigger_clear(&txn->fiber_on_cleanup);
 	if (!txn_has_flag(txn, TXN_CAN_YIELD))
 		trigger_clear(&txn->fiber_on_yield);
 	return 0;
@@ -618,7 +619,7 @@ void
 txn_rollback(struct txn *txn)
 {
 	assert(txn == in_txn());
-	trigger_clear(&txn->fiber_on_stop);
+	trigger_clear(&txn->fiber_on_cleanup);
 	if (!txn_has_flag(txn, TXN_CAN_YIELD))
 		trigger_clear(&txn->fiber_on_yield);
 	txn->signature = -1;
@@ -840,7 +841,7 @@ txn_savepoint_release(struct txn_savepoint *svp)
 }
 
 static int
-txn_on_stop(struct trigger *trigger, void *event)
+txn_on_fiber_cleanup(struct trigger *trigger, void *event)
 {
 	(void) trigger;
 	(void) event;

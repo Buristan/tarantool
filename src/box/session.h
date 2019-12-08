@@ -103,8 +103,11 @@ struct session {
 	union session_meta meta;
 	/** Session user id and global grants */
 	struct credentials credentials;
-	/** Trigger for fiber on_stop to cleanup created on-demand session */
-	struct trigger fiber_on_stop;
+	/**
+	 * Trigger for fiber on_cleanup to cleanup created
+	 * on-demand session.
+	 */
+	struct trigger fiber_on_cleanup;
 };
 
 struct session_vtab {

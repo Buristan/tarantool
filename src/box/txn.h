@@ -207,10 +207,11 @@ struct txn {
 	 */
 	struct trigger fiber_on_yield;
 	/**
-	 * Trigger on fiber stop, to rollback transaction
-	 * in case a fiber stops (all engines).
+	 * Trigger on fiber cleanup, to rollback transaction
+	 * in case a fiber is getting reset/recycled/destroyed
+	 * (all engines).
 	 */
-	struct trigger fiber_on_stop;
+	struct trigger fiber_on_cleanup;
 	/** Commit and rollback triggers. */
 	struct rlist on_commit, on_rollback;
 	/**

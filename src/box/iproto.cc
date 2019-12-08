@@ -1306,6 +1306,12 @@ static void
 tx_fiber_init(struct session *session, uint64_t sync)
 {
 	struct fiber *f = fiber();
+	/*
+	 * There should not be any not executed
+	 * destructors from a previous request
+	 * executed in that fiber.
+	 */
+	assert(rlist_empty(&f->on_cleanup));
 	f->storage.net.sync = sync;
 	/*
 	 * We do not cleanup fiber keys at the end of each request.
@@ -1321,6 +1327,17 @@ tx_fiber_init(struct session *session, uint64_t sync)
 	fiber_set_user(f, &session->credentials);
 }
 
+/**
+ * Cleanup current fiber after a request is
+ * executed to make it possible to reuse the fiber
+ * for a next request.
+ */
+static inline void
+tx_fiber_cleanup()
+{
+	fiber_cleanup(fiber());
+}
+
 static void
 tx_process_disconnect(struct cmsg *m)
 {
@@ -1331,6 +1348,7 @@ tx_process_disconnect(struct cmsg *m)
 		if (! rlist_empty(&session_on_disconnect)) {
 			tx_fiber_init(con->session, 0);
 			session_run_on_disconnect_triggers(con->session);
+			tx_fiber_cleanup();
 		}
 	}
 }
@@ -1486,6 +1504,7 @@ tx_reply_iproto_error(struct cmsg *m)
 	iproto_reply_error(out, diag_last_error(&msg->diag),
 			   msg->header.sync, ::schema_version);
 	iproto_wpos_create(&msg->wpos, out);
+	tx_fiber_cleanup();
 }
 
 /** Inject a short delay on tx request processing for testing. */
@@ -1519,9 +1538,11 @@ tx_process1(struct cmsg *m)
 	iproto_reply_select(out, &svp, msg->header.sync, ::schema_version,
 			    tuple != 0);
 	iproto_wpos_create(&msg->wpos, out);
-	return;
+	goto end;
 error:
 	tx_reply_error(msg);
+end:
+	tx_fiber_cleanup();
 }
 
 static void
@@ -1562,9 +1583,11 @@ tx_process_select(struct cmsg *m)
 	iproto_reply_select(out, &svp, msg->header.sync,
 			    ::schema_version, count);
 	iproto_wpos_create(&msg->wpos, out);
-	return;
+	goto end;
 error:
 	tx_reply_error(msg);
+end:
+	tx_fiber_cleanup();
 }
 
 static int
@@ -1652,9 +1675,11 @@ tx_process_call(struct cmsg *m)
 	iproto_reply_select(out, &svp, msg->header.sync,
 			    ::schema_version, count);
 	iproto_wpos_create(&msg->wpos, out);
-	return;
+	goto end;
 error:
 	tx_reply_error(msg);
+end:
+	tx_fiber_cleanup();
 }
 
 static void
@@ -1695,9 +1720,11 @@ tx_process_misc(struct cmsg *m)
 	} catch (Exception *e) {
 		tx_reply_error(msg);
 	}
-	return;
+	goto end;
 error:
 	tx_reply_error(msg);
+end:
+	tx_fiber_cleanup();
 }
 
 static void
@@ -1710,8 +1737,6 @@ tx_process_sql(struct cmsg *m)
 	int bind_count = 0;
 	const char *sql;
 	uint32_t len;
-
-	tx_fiber_init(msg->connection->session, msg->header.sync);
 
 	if (tx_check_schema(msg->header.schema_version))
 		goto error;
@@ -1746,9 +1771,11 @@ tx_process_sql(struct cmsg *m)
 	port_destroy(&port);
 	iproto_reply_sql(out, &header_svp, msg->header.sync, schema_version);
 	iproto_wpos_create(&msg->wpos, out);
-	return;
+	goto end;
 error:
 	tx_reply_error(msg);
+end:
+	tx_fiber_cleanup();
 }
 
 static void
@@ -1781,11 +1808,12 @@ tx_process_join_subscribe(struct cmsg *m)
 			unreachable();
 		}
 	} catch (SocketError *e) {
-		return; /* don't write error response to prevent SIGPIPE */
+		/* don't write error response to prevent SIGPIPE */
 	} catch (Exception *e) {
 		iproto_write_error(con->input.fd, e, ::schema_version,
 				   msg->header.sync);
 	}
+	tx_fiber_cleanup();
 }
 
 static void
@@ -1891,6 +1919,7 @@ tx_process_connect(struct cmsg *m)
 		tx_reply_error(msg);
 		msg->close_connection = true;
 	}
+	tx_fiber_cleanup();
 }
 
 /**
