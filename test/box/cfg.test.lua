@@ -141,3 +141,21 @@ test_run:cmd("start server cfg_tester6")
 test_run:grep_log('cfg_tester6', 'set \'vinyl_memory\' configuration option to 1073741824', 1000)
 test_run:cmd("stop server cfg_tester6")
 test_run:cmd("cleanup server cfg_tester6")
+
+--
+-- gh-4574: Check schema version after tarantool update
+--
+test_run:cmd('create server cfg_tester7 with script = "box/lua/cfg_test7.lua", workdir="sql/upgrade/2.1.0/"')
+test_run:cmd("start server cfg_tester7")
+--- check that the warning is printed
+version_warning = "Schema version [0-9]%.[0-9]%.[0-9] doesn't match Tarantool version"
+test_run:grep_log('cfg_tester7', version_warning, 1000) ~= nil
+test_run:cmd("stop server cfg_tester7")
+test_run:cmd("cleanup server cfg_tester7")
+
+test_run:cmd('create server cfg_tester8 with script = "box/lua/cfg_test8.lua"')
+test_run:cmd("start server cfg_tester8")
+--- check that the warning is NOT printed
+test_run:grep_log('cfg_tester8', version_warning, 1000) == nil
+test_run:cmd("stop server cfg_tester8")
+test_run:cmd("cleanup server cfg_tester8")

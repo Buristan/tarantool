@@ -555,6 +555,28 @@ local function load_cfg(cfg)
     if not box.cfg.read_only and not box.cfg.replication then
         box.schema.upgrade{auto = true}
     end
+
+    --- Check if schema version matches Tarantool version
+    --- and print warning if it's not (in case user forgot to call box.schema.upgrade())
+    local version = box.space._schema:get{'version'}
+    if version ~= nil then
+        local major = version[2]
+        local minor = version[3]
+        local patch = version[4] or 0
+        local schema_version = string.format("%s.%s.%s", major, minor, patch)
+        local tarantool_version = box.info.version
+        -- Versions are considered identical
+        -- if Tarantool version starts with schema version substring
+        local version_match = tarantool_version:sub(1, #schema_version) == schema_version
+        if not version_match then
+            --- Print the warning
+            local msg = string.format(
+                "Schema version %s doesn't match Tarantool version %s " ..
+                "(consider using box.schema.upgrade())",
+                schema_version, tarantool_version)
+            log.warn(msg)
+        end
+    end
 end
 box.cfg = locked(load_cfg)
 
