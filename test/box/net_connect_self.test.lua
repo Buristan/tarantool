@@ -1,0 +1,33 @@
+remote = require('net.box')
+--
+-- gh-4513 netbox.connect and netbox.self should be interchangeable
+--
+space = box.schema.space.create('gh4513')
+box.schema.user.grant('guest','read, write, execute','universe')
+idx = box.space.gh4513:create_index('primary')
+box.space.gh4513:insert({1})
+
+type(remote.connect(box.cfg.listen):eval("return box.space.gh4513:get({1})"))
+type(remote.self:eval("return box.space.gh4513:get{1}"))
+
+type(remote.connect(box.cfg.listen):eval('return box.error.new(1, "test error")'))
+type(remote.self:eval('return box.error.new(1, "test error")'))
+
+type(remote.self:eval("return box.NULL"))
+type(remote.connect(box.cfg.listen):eval("return box.NULL"))
+
+--
+-- gh-4602 net.box:self allows to modify source object after transfer
+--
+x = {}
+function test() return x end
+box.schema.func.create('test')
+box.schema.user.grant('guest', 'execute', 'function', 'test')
+
+y = remote.connect(box.cfg.listen):call('test')
+-- should be false
+y == x
+
+z = remote.self:call('test')
+-- should be false as well
+z == x
