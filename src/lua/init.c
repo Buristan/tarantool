@@ -56,6 +56,7 @@
 #include "lua/msgpack.h"
 #include "lua/pickle.h"
 #include "lua/fio.h"
+#include "lua/popen.h"
 #include "lua/httpc.h"
 #include "lua/utf8.h"
 #include "lua/swim.h"
@@ -99,6 +100,7 @@ extern char strict_lua[],
 	help_en_US_lua[],
 	tap_lua[],
 	fio_lua[],
+	popen_lua[],
 	error_lua[],
 	argparse_lua[],
 	iconv_lua[],
@@ -141,6 +143,7 @@ static const char *lua_modules[] = {
 	"log", log_lua,
 	"uri", uri_lua,
 	"fio", fio_lua,
+	"popen", popen_lua,
 	"error", error_lua,
 	"csv", csv_lua,
 	"clock", clock_lua,
@@ -455,6 +458,7 @@ tarantool_lua_init(const char *tarantool_bin, int argc, char **argv)
 	tarantool_lua_errno_init(L);
 	tarantool_lua_error_init(L);
 	tarantool_lua_fio_init(L);
+	tarantool_lua_popen_init(L);
 	tarantool_lua_socket_init(L);
 	tarantool_lua_pickle_init(L);
 	tarantool_lua_digest_init(L);

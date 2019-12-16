@@ -38,6 +38,7 @@ lua_source(lua_sources lua/help.lua)
 lua_source(lua_sources lua/help_en_US.lua)
 lua_source(lua_sources lua/tap.lua)
 lua_source(lua_sources lua/fio.lua)
+lua_source(lua_sources lua/popen.lua)
 lua_source(lua_sources lua/csv.lua)
 lua_source(lua_sources lua/strict.lua)
 lua_source(lua_sources lua/clock.lua)
@@ -114,6 +115,7 @@ set (server_sources
      lua/socket.c
      lua/pickle.c
      lua/fio.c
+     lua/popen.c
      lua/httpc.c
      lua/utf8.c
      lua/info.c
