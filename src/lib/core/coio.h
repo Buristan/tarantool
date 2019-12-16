@@ -32,8 +32,15 @@
  */
 #include "fiber.h"
 #include "trivia/util.h"
-#if defined(__cplusplus)
+
 #include "evio.h"
+
+#if defined(__cplusplus)
+extern "C" {
+#endif /* defined(__cplusplus) */
+
+struct sockaddr;
+struct uri;
 
 /**
  * Co-operative I/O
@@ -70,8 +77,12 @@ coio_accept(struct ev_io *coio, struct sockaddr *addr, socklen_t addrlen,
 void
 coio_create(struct ev_io *coio, int fd);
 
+/*
+ * Due to name conflict with coio_close in API_EXPORT
+ * we have to use coio_close_io() instead of plain coio_close().
+ */
 static inline void
-coio_close(ev_loop *loop, struct ev_io *coio)
+coio_close_io(ev_loop *loop, struct ev_io *coio)
 {
 	return evio_close(loop, coio);
 }
@@ -185,9 +196,6 @@ coio_stat_stat_timeout(ev_stat *stat, ev_tstamp delay);
 int
 coio_waitpid(pid_t pid);
 
-extern "C" {
-#endif /* defined(__cplusplus) */
-
 /** \cond public */
 
 enum {
@@ -231,6 +239,19 @@ coio_close(int fd);
  */
 int
 coio_write_fd_timeout(int fd, const void *data, size_t size, ev_tstamp timeout);
+
+/**
+ * Read from a socket in at most @a timeout seconds.
+ * @param fd Socket descriptor.
+ * @param data Data to read.
+ * @param size Size of @a data.
+ * @param timeout Timeout on the operation.
+ *
+ * @retval >= 0 Read bytes (0 treated as EOF).
+ * @retval -1 Timeout or socket error.
+ */
+ssize_t
+coio_read_fd_timeout(int fd, void *data, size_t size, ev_tstamp timeout);
 
 #if defined(__cplusplus)
 } /* extern "C" */

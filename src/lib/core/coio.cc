@@ -740,6 +740,47 @@ int coio_close(int fd)
 	return close(fd);
 }
 
+ssize_t
+coio_read_fd_timeout(int fd, void *data, size_t size, ev_tstamp timeout)
+{
+	ev_tstamp start, delay;
+	ev_loop *loop = loop();
+	ssize_t pos = 0;
+
+	evio_timeout_init(loop, &start, &delay, timeout);
+
+	while (size > 0) {
+		ssize_t rc = read(fd, data, size);
+		if (rc > 0) {
+			size -= (size_t)rc;
+			pos += rc;
+			data = (char *)data + rc;
+			continue;
+		} else if (rc == 0) {
+			/*
+			 * Socket peer could be closed
+			 * or shot down.
+			 */
+			break;
+		}
+
+		if (delay <= 0) {
+			diag_set(TimedOut);
+			return -1;
+		}
+
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			coio_wait(fd, COIO_READ, delay);
+			evio_timeout_update(loop, &start, &delay);
+		} else if (errno != EINTR) {
+			diag_set(SocketError, sio_socketname(fd), "read");
+			return -1;
+		}
+	}
+
+	return pos;
+}
+
 int
 coio_write_fd_timeout(int fd, const void *data, size_t size, ev_tstamp timeout)
 {
