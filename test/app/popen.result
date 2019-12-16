@@ -1,0 +1,234 @@
+-- test-run result file version 2
+-- Test popen engine
+--
+-- vim: ts=4 sw=4 et
+
+buffer = require('buffer')
+ | ---
+ | ...
+popen = require('popen')
+ | ---
+ | ...
+ffi = require('ffi')
+ | ---
+ | ...
+
+test_run = require('test_run').new()
+ | ---
+ | ...
+
+buf = buffer.ibuf()
+ | ---
+ | ...
+
+--
+-- Trivial echo output
+--
+script = "echo -n 1 2 3 4 5"
+ | ---
+ | ...
+ph = popen.posix(script, "r")
+ | ---
+ | ...
+ph:wait()   -- wait echo to finish
+ | ---
+ | - null
+ | - 2
+ | - 0
+ | ...
+ph:read()   -- read the output
+ | ---
+ | - 1 2 3 4 5
+ | ...
+ph:close()  -- release the popen
+ | ---
+ | - true
+ | ...
+
+--
+-- Test info and force killing of a child process
+--
+script = "while [ 1 ]; do sleep 10; done"
+ | ---
+ | ...
+ph = popen.posix(script, "r")
+ | ---
+ | ...
+ph:kill()
+ | ---
+ | - true
+ | ...
+--
+-- Killing child may be queued and depends on
+-- system load, so we may get ESRCH here.
+err, reason, exit_code = ph:wait()
+ | ---
+ | ...
+ph:state()
+ | ---
+ | - null
+ | - 3
+ | - 9
+ | ...
+info = ph:info()
+ | ---
+ | ...
+info["command"]
+ | ---
+ | - sh -c while [ 1 ]; do sleep 10; done
+ | ...
+info["state"]
+ | ---
+ | - signaled
+ | ...
+info["flags"]
+ | ---
+ | - 61510
+ | ...
+info["exit_code"]
+ | ---
+ | - 9
+ | ...
+ph:close()
+ | ---
+ | - true
+ | ...
+
+--
+-- Test info and soft killing of a child process
+--
+script = "while [ 1 ]; do sleep 10; done"
+ | ---
+ | ...
+ph = popen.posix(script, "r")
+ | ---
+ | ...
+ph:terminate()
+ | ---
+ | - true
+ | ...
+--
+-- Killing child may be queued and depends on
+-- system load, so we may get ESRCH here.
+err, reason, exit_code = ph:wait()
+ | ---
+ | ...
+ph:state()
+ | ---
+ | - null
+ | - 3
+ | - 15
+ | ...
+info = ph:info()
+ | ---
+ | ...
+info["command"]
+ | ---
+ | - sh -c while [ 1 ]; do sleep 10; done
+ | ...
+info["state"]
+ | ---
+ | - signaled
+ | ...
+info["flags"]
+ | ---
+ | - 61510
+ | ...
+info["exit_code"]
+ | ---
+ | - 15
+ | ...
+ph:close()
+ | ---
+ | - true
+ | ...
+
+--
+-- Test for stdin/out stream
+--
+script="prompt=''; read -n 5 prompt; echo -n $prompt"
+ | ---
+ | ...
+ph = popen.posix(script, "rw")
+ | ---
+ | ...
+ph:write("input")
+ | ---
+ | - true
+ | ...
+ph:read()
+ | ---
+ | - input
+ | ...
+ph:close()
+ | ---
+ | - true
+ | ...
+
+--
+-- Test reading stderr (simply redirect stdout to stderr)
+--
+script = "echo -n 1 2 3 4 5 1>&2"
+ | ---
+ | ...
+ph = popen.posix(script, "rw")
+ | ---
+ | ...
+ph:wait()
+ | ---
+ | - null
+ | - 2
+ | - 0
+ | ...
+size = 128
+ | ---
+ | ...
+dst = buf:reserve(size)
+ | ---
+ | ...
+res, err = ph:read2({buf = dst, size = size, nil, flags = {stderr = true}})
+ | ---
+ | ...
+res = buf:alloc(res)
+ | ---
+ | ...
+ffi.string(buf.rpos, buf:size())
+ | ---
+ | - 1 2 3 4 5
+ | ...
+buf:recycle()
+ | ---
+ | ...
+ph:close()
+ | ---
+ | - true
+ | ...
+
+--
+-- Test timeouts: just wait for 0.1 second
+-- to elapse, then write data and re-read
+-- for sure.
+--
+script = "prompt=''; read -n 5 prompt && echo -n $prompt;"
+ | ---
+ | ...
+ph = popen.posix(script, "rw")
+ | ---
+ | ...
+ph:read(nil, 0.1)
+ | ---
+ | - null
+ | - 'popen: Resource temporarily unavailable'
+ | ...
+ph:write("input")
+ | ---
+ | - true
+ | ...
+ph:read()
+ | ---
+ | - input
+ | ...
+ph:close()
+ | ---
+ | - true
+ | ...
