@@ -951,8 +951,15 @@ local function drop_func_collation()
     _func.index.name:alter({parts = {{'name', 'string'}}})
 end
 
+local function update_vfunc_format()
+    local _func = box.space[box.schema.FUNC_ID]
+    local _vfunc = box.space[box.schema.VFUNC_ID]
+    _vfunc:format(_func:format())
+end
+
 local function upgrade_to_2_3_1()
     drop_func_collation()
+    update_vfunc_format()
 end
 
 --------------------------------------------------------------------------------

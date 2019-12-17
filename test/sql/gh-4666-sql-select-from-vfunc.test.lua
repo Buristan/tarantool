@@ -1,0 +1,4 @@
+--
+-- Make sure assertion does not fail.
+--
+box.execute([[select "id" from "_vfunc" where "id" = 1;]])
