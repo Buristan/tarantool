@@ -364,7 +364,7 @@ fio.mktree = function(path, mode)
         local stat = fio.stat(current_dir)
         if stat == nil then
             local st, err = fio.mkdir(current_dir, mode)
-            if err ~= nil  then
+            if err ~= nil and not fio.path.is_dir(current_dir) then
                 return false, string.format("Error creating directory %s: %s",
                     current_dir, tostring(err))
             end
