@@ -142,10 +142,19 @@ deps_osx:
 	# if the package already exists with the previous version
 	export PATH=${PATH}:/usr/local/bin ; \
 		brew install --force ${OSX_PKGS} || brew upgrade ${OSX_PKGS}
+	# OSX 10.15 Catalina started to use Xcode 11 which has 'Deprications'
+	# part in Release Notes:
+	#   Use of Python 2.7 isn’t recommended. This version is included in
+	#   macOS for compatibility with legacy software. Future versions of
+	#   macOS won’t include Python 2.7. Instead, it’s recommended that
+	#   you run python3 in Terminal. (51097165)
 	python2 -V || brew install python2 --force
 	curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py >get-pip.py
 	python get-pip.py --user
-	pip install --user --force-reinstall -r test-run/requirements.txt
+	# To make pip tools available, the PATH environment must include the
+	# path to its binaries
+	export PATH=${PATH}:/Users/tarantool/Library/Python/2.7/bin ; \
+		pip install --user --force-reinstall -r test-run/requirements.txt
 
 build_osx:
 	export PATH=${PATH}:/usr/local/bin ; \
