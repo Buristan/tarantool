@@ -20,7 +20,7 @@ local EOL = ";"
 
 test = tap.test("console-lua")
 
-test:plan(7)
+test:plan(8)
 
 --
 -- Start console and connect to it
@@ -44,6 +44,12 @@ test:is(client:read(EOL), EOL, "declare array")
 
 client:write('1,2,nil,a\n')
 test:is(client:read(EOL), '1, 2, box.NULL, {1, 2, 3}' .. EOL, "multireturn numbers")
+
+--
+-- Try to setup empty output mode
+client:write('\\set output\n')
+test:is(client:read(EOL), '\"Specify output format: lua or yaml.\"' .. EOL,
+        "set empty output mode")
 
 --
 -- Disconect from console
