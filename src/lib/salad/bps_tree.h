@@ -2147,8 +2147,11 @@ bps_tree_create_leaf(struct bps_tree *tree, bps_tree_block_id_t *id)
 {
 	struct bps_leaf *res = (struct bps_leaf *)
 			       bps_tree_garbage_pop(tree, id);
-	if (!res)
-		res = (struct bps_leaf *)matras_alloc(&tree->matras, id);
+	if (!res) {
+		res = (struct bps_leaf *) matras_alloc(&tree->matras, id);
+		if (!res)
+			return NULL;
+	}
 	res->header.type = BPS_TREE_BT_LEAF;
 	tree->leaf_count++;
 	return res;
