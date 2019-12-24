@@ -206,6 +206,10 @@ local function encode_nil(buf)
     p[0] = 0xc0
 end
 
+local nan = 0/0
+local inf = 1/0
+local minf = -1/0
+
 local function encode_r(buf, obj, level)
 ::restart::
     if type(obj) == "number" then
@@ -218,6 +222,7 @@ local function encode_r(buf, obj, level)
     elseif type(obj) == "string" then
         encode_str(buf, obj)
     elseif type(obj) == "table" then
+
         if level >= msgpack.cfg.encode_max_depth then
             if not msgpack.cfg.encode_deep_as_nil then
                 error(string.format('Too high nest level - %d',
@@ -264,14 +269,14 @@ local function encode_r(buf, obj, level)
             error("Invalid __serialize value")
         end
     elseif type(obj) == math.huge or type(obj) == -math.huge or 
-        type(obj) == math.nan then
+        type(obj) == nil then
         if msgpack.cfg.encode_invalid_numbers then
             if obj == math.huge then
-                obj = 1/0
+                obj = inf
             elseif obj == -math.huge then
-                obj = -1/0
+                obj = minf
             else
-                obj = 0/0
+                obj = nan
             end
         else
             encode_nil(buf)
@@ -590,11 +595,11 @@ decode_r = function(data)
         return tonumber(ffi.cast('signed char',c)) -- negfixint
     elseif c == 0xc0 then
         if msgpack.cfg.decode_invalid_numbers then
-            if c == 0/0 then
+            if c == nan then
                 return math.nan
-            elseif c == 1/0 then
+            elseif c == inf then
                 return math.huge
-            elseif c == -1/0 then
+            elseif c == minf then
                 return -math.huge
             end
         end
