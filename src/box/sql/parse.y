@@ -457,6 +457,8 @@ cmd ::= select(X).  {
           sqlSelect(pParse, X, &dest);
   else
           sql_expr_extract_select(pParse, X);
+  /* Instruct SQL to initate Tarantool's transaction.  */
+  pParse->initiateTTrans = true;
   sql_select_delete(pParse->db, X);
 }
 
