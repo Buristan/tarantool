@@ -12,7 +12,7 @@ local function execute_is_immutable(execute, cmd, msg)
     local status, err = pcall(function()
         execute(cmd)
     end)
-    -- test:ok(status and err == nil, msg)
+    test:ok(status and err == nil, msg)
 end
 
 local box_execute_stub = box.execute
@@ -24,7 +24,7 @@ local box_execute_actual = box.execute
 -- implicit call to load_cfg
 box.cfg{}
 -- checking the function was not reconfigured, i.e. adress stays the same
--- test:is(box_execute_actual, box.execute, "execute is the same")
+test:is(box_execute_actual, box.execute, "execute is the same")
 execute_is_immutable(box_execute_actual, 
     "CREATE TABLE t1 (s1 INTEGER, PRIMARY KEY (s1));",
     "execute does not work properly after box.cfg")
