@@ -265,9 +265,10 @@ session_settings_index_get(struct index *base, const char *key,
 	struct session_setting_module *module = &session_setting_modules[0];
 	struct session_setting_module *end = module + session_setting_type_MAX;
 	int sid = 0;
+	int count = module->setting_count;
 	for (; module < end; ++module, sid = 0) {
-		if (session_settings_next_in_module(module, &sid, key, true,
-						    true) == 0)
+		if ((sid = str_bin_search(module->settings, key,
+					  count)) != count)
 			goto found;
 	}
 	*result = NULL;
@@ -372,9 +373,10 @@ session_settings_space_execute_update(struct space *space, struct txn *txn,
 	key = tt_cstr(key, key_len);
 	struct session_setting_module *module = &session_setting_modules[0];
 	struct session_setting_module *end = module + session_setting_type_MAX;
+	int count = module->setting_count;
 	for (; module < end; ++module, sid = 0) {
-		if (session_settings_next_in_module(module, &sid, key, true,
-						    true) == 0)
+		if ((sid = str_bin_search(module->settings, key,
+					  count)) != count)
 			goto found;
 	}
 	*result = NULL;

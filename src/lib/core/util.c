@@ -84,6 +84,28 @@ strnindex(const char **haystack, const char *needle, uint32_t len, uint32_t hmax
 	return hmax;
 }
 
+/**
+ * Same as strindex(), but assuming the array is sorted and it's
+ * size is known.
+ */
+uint32_t
+str_bin_search(const char **haystack, const char *needle, uint32_t hmax) {
+	int cmp;
+	uint32_t index, start = 0;
+	uint32_t end = hmax;
+	while (start < end) {
+		index = (start + end) / 2;
+		cmp = strcmp(haystack[index], needle);
+		if (cmp < 0)
+			start = index + 1;
+		else
+			end = index;
+	}
+	if (start < hmax && strcmp(haystack[start], needle) == 0)
+		return start;
+	return hmax;
+}
+
 void
 close_all_xcpt(int fdc, ...)
 {
