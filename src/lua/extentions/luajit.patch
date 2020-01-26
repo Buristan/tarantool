@@ -1,0 +1,26 @@
+diff --git a/src/Makefile b/src/Makefile
+index b1ffd6c..e221e67 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -483,7 +483,7 @@ LJVM_BOUT= $(LJVM_S)
+ LJVM_MODE= elfasm
+ 
+ LJLIB_O= lib_base.o lib_math.o lib_bit.o lib_string.o lib_table.o \
+-	 lib_io.o lib_os.o lib_package.o lib_debug.o lib_jit.o lib_ffi.o
++	 lib_io.o lib_os.o lib_package.o lib_debug.o lib_jit.o lib_ffi.o lib_tnt_ext.o
+ LJLIB_C= $(LJLIB_O:.o=.c)
+ 
+ LJCORE_O= lj_gc.o lj_err.o lj_char.o lj_bc.o lj_obj.o lj_buf.o \
+diff --git a/src/Makefile.dep b/src/Makefile.dep
+index 2b1cb5e..88a68d7 100644
+--- a/src/Makefile.dep
++++ b/src/Makefile.dep
+@@ -41,6 +41,8 @@ lib_string.o: lib_string.c lua.h luaconf.h lauxlib.h lualib.h lj_obj.h \
+ lib_table.o: lib_table.c lua.h luaconf.h lauxlib.h lualib.h lj_obj.h \
+  lj_def.h lj_arch.h lj_gc.h lj_err.h lj_errmsg.h lj_buf.h lj_str.h \
+  lj_tab.h lj_ff.h lj_ffdef.h lj_lib.h lj_libdef.h
++lib_tnt_ext.o: lib_tnt_ext.c lib_tnt_ext.h lj_ctype.h lj_cdata.h \
++ lj_tab.h lj_lib.h lj_obj.h lj_state.h lj_cconv.h lj_meta.h
+ lj_alloc.o: lj_alloc.c lj_def.h lua.h luaconf.h lj_arch.h lj_alloc.h
+ lj_api.o: lj_api.c lj_obj.h lua.h luaconf.h lj_def.h lj_arch.h lj_gc.h \
+  lj_err.h lj_errmsg.h lj_debug.h lj_str.h lj_tab.h lj_func.h lj_udata.h \

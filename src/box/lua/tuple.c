@@ -523,12 +523,12 @@ luaT_pushtuple(struct lua_State *L, box_tuple_t *tuple)
 {
 	assert(CTID_STRUCT_TUPLE_REF != 0);
 	struct tuple **ptr = (struct tuple **)
-		luaL_pushcdata(L, CTID_STRUCT_TUPLE_REF);
+		luaTNT_pushcdata(L, CTID_STRUCT_TUPLE_REF);
 	*ptr = tuple;
 	/* The order is important - first reference tuple, next set gc */
 	box_tuple_ref(tuple);
 	lua_pushcfunction(L, lbox_tuple_gc);
-	luaL_setcdatagc(L, -2);
+	luaTNT_setcdatagc(L, -2);
 }
 
 static const struct luaL_Reg lbox_tuple_meta[] = {

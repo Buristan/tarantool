@@ -53,7 +53,7 @@ static int
 lbox_pushcursor(struct lua_State *L, struct xlog_cursor *cur)
 {
 	struct xlog_cursor **pcur = NULL;
-	pcur = (struct xlog_cursor **)luaL_pushcdata(L,
+	pcur = (struct xlog_cursor **)luaTNT_pushcdata(L,
 			CTID_STRUCT_XLOG_CURSOR_REF);
 	*pcur = cur;
 	return 1;
@@ -308,7 +308,7 @@ lbox_xlog_parser_open_pairs(struct lua_State *L)
 	/* push log and set GC */
 	lbox_pushcursor(L, cur);
 	lua_pushcfunction(L, lbox_xlog_parser_gc);
-	luaL_setcdatagc(L, -2);
+	luaTNT_setcdatagc(L, -2);
 	/* push iterator position */
 	lua_pushinteger(L, 0);
 	return 3;

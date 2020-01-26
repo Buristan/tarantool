@@ -47,60 +47,6 @@ static uint32_t CTID_CHAR_PTR;
 static uint32_t CTID_CONST_CHAR_PTR;
 uint32_t CTID_DECIMAL;
 
-
-void *
-luaL_pushcdata(struct lua_State *L, uint32_t ctypeid)
-{
-	/*
-	 * ctypeid is actually has CTypeID type.
-	 * CTypeId is defined somewhere inside luajit's internal
-	 * headers.
-	 */
-	assert(sizeof(ctypeid) == sizeof(CTypeID));
-
-	/* Code below is based on ffi_new() from luajit/src/lib_ffi.c */
-
-	/* Get information about ctype */
-	CTSize size;
-	CTState *cts = ctype_cts(L);
-	CTInfo info = lj_ctype_info(cts, ctypeid, &size);
-	assert(size != CTSIZE_INVALID);
-
-	/* Allocate a new cdata */
-	GCcdata *cd = lj_cdata_new(cts, ctypeid, size);
-
-	/* Anchor the uninitialized cdata with the stack. */
-	TValue *o = L->top;
-	setcdataV(L, o, cd);
-	incr_top(L);
-
-	/*
-	 * lj_cconv_ct_init is omitted for non-structs because it actually
-	 * does memset()
-	 * Caveats: cdata memory is returned uninitialized
-	 */
-	if (ctype_isstruct(info)) {
-		/* Initialize cdata. */
-		CType *ct = ctype_raw(cts, ctypeid);
-		lj_cconv_ct_init(cts, ct, size, cdataptr(cd), o,
-				 (MSize)(L->top - o));
-		/* Handle ctype __gc metamethod. Use the fast lookup here. */
-		cTValue *tv = lj_tab_getinth(cts->miscmap, -(int32_t)ctypeid);
-		if (tv && tvistab(tv) && (tv = lj_meta_fast(L, tabV(tv), MM_gc))) {
-			GCtab *t = cts->finalizer;
-			if (gcref(t->metatable)) {
-				/* Add to finalizer table, if still enabled. */
-				copyTV(L, lj_tab_set(L, t, o), tv);
-				lj_gc_anybarriert(L, t);
-				cd->marked |= LJ_GC_CDATA_FIN;
-			}
-		}
-	}
-
-	lj_gc_check(L);
-	return cdataptr(cd);
-}
-
 void *
 luaL_checkcdata(struct lua_State *L, int idx, uint32_t *ctypeid)
 {
@@ -114,9 +60,8 @@ luaL_checkcdata(struct lua_State *L, int idx, uint32_t *ctypeid)
 		return NULL;
 	}
 
-	GCcdata *cd = cdataV(L->base + idx - 1);
-	*ctypeid = cd->ctypeid;
-	return (void *)cdataptr(cd);
+	*ctypeid = luaTNT_getcdatatype(L, idx);
+	return (void *)luaTNT_getcdataptr(L, idx);
 }
 
 uint32_t
@@ -187,37 +132,6 @@ luaL_cdef(struct lua_State *L, const char *what)
 	lua_pushstring(L, what);
 	/* Call ffi.cdef() */
 	return lua_pcall(L, 1, 0, 0);
-}
-
-void
-luaL_setcdatagc(struct lua_State *L, int idx)
-{
-	/* Calculate absolute value in the stack. */
-	if (idx < 0)
-		idx = lua_gettop(L) + idx + 1;
-
-	/* Code below is based on ffi_gc() from luajit/src/lib_ffi.c */
-
-	/* Get cdata from the stack */
-	assert(lua_type(L, idx) == LUA_TCDATA);
-	GCcdata *cd = cdataV(L->base + idx - 1);
-
-	/* Get finalizer from the stack */
-	TValue *fin = lj_lib_checkany(L, lua_gettop(L));
-
-#if !defined(NDEBUG)
-	CTState *cts = ctype_cts(L);
-	CType *ct = ctype_raw(cts, cd->ctypeid);
-	(void) ct;
-	assert(ctype_isptr(ct->info) || ctype_isstruct(ct->info) ||
-	       ctype_isrefarray(ct->info));
-#endif /* !defined(NDEBUG) */
-
-	/* Set finalizer */
-	lj_cdata_setfin(L, cd, gcval(fin), itype(fin));
-
-	/* Pop finalizer */
-	lua_pop(L, 1);
 }
 
 
@@ -678,11 +592,13 @@ luaL_tofield(struct lua_State *L, struct luaL_serializer *cfg, int index,
 		return 0;
 	case LUA_TCDATA:
 	{
-		GCcdata *cd = cdataV(L->base + index - 1);
-		void *cdata = (void *)cdataptr(cd);
+		void *cdata = luaTNT_getcdataptr(L, index);
+		assert(cdata);
+		CTypeID ctypeid = luaTNT_getcdatatype(L, index);
+		assert(ctypeid != CTID_NONE);
 
 		int64_t ival;
-		switch (cd->ctypeid) {
+		switch (ctypeid) {
 		case CTID_BOOL:
 			field->type = MP_BOOL;
 			field->bval = *(bool*) cdata;
@@ -743,7 +659,7 @@ luaL_tofield(struct lua_State *L, struct luaL_serializer *cfg, int index,
 			/* Fall through */
 		default:
 			field->type = MP_EXT;
-			if (cd->ctypeid == CTID_DECIMAL) {
+			if (ctypeid == CTID_DECIMAL) {
 				field->ext_type = MP_DECIMAL;
 				field->decval = (decimal_t *) cdata;
 			} else {
@@ -801,8 +717,8 @@ luaL_convertfield(struct lua_State *L, struct luaL_serializer *cfg, int idx,
 			 * Don't call __serialize on primitive types
 			 * https://github.com/tarantool/tarantool/issues/1226
 			 */
-			GCcdata *cd = cdataV(L->base + idx - 1);
-			if (cd->ctypeid > CTID_CTYPEID)
+			CTypeID ctypeid = luaTNT_getcdatatype(L, idx);
+			if (ctypeid > CTID_CTYPEID)
 				lua_field_inspect_ucdata(L, cfg, idx, field);
 		} else if (type == LUA_TUSERDATA) {
 			lua_field_inspect_ucdata(L, cfg, idx, field);
@@ -891,7 +807,7 @@ luaL_pushuint64(struct lua_State *L, uint64_t val)
 		lua_pushnumber(L, (double) val);
 	} else {
 		/* push uint64_t */
-		*(uint64_t *) luaL_pushcdata(L, CTID_UINT64) = val;
+		*(uint64_t *) luaTNT_pushcdata(L, CTID_UINT64) = val;
 	}
 }
 
@@ -909,7 +825,7 @@ luaL_pushint64(struct lua_State *L, int64_t val)
 		lua_pushnumber(L, (double) val);
 	} else {
 		/* push int64_t */
-		*(int64_t *) luaL_pushcdata(L, CTID_INT64) = val;
+		*(int64_t *) luaTNT_pushcdata(L, CTID_INT64) = val;
 	}
 }
 
@@ -1077,30 +993,6 @@ luaT_tolstring(lua_State *L, int idx, size_t *len)
 	return lua_tolstring(L, -1, len);
 }
 
-/* Based on ffi_meta___call() from luajit/src/lib_ffi.c. */
-static int
-luaL_cdata_iscallable(lua_State *L, int idx)
-{
-	/* Calculate absolute value in the stack. */
-	if (idx < 0)
-		idx = lua_gettop(L) + idx + 1;
-
-	/* Get cdata from the stack. */
-	assert(lua_type(L, idx) == LUA_TCDATA);
-	GCcdata *cd = cdataV(L->base + idx - 1);
-
-	CTState *cts = ctype_cts(L);
-	CTypeID id = cd->ctypeid;
-	CType *ct = ctype_raw(cts, id);
-	if (ctype_isptr(ct->info))
-		id = ctype_cid(ct->info);
-
-	/* Get ctype metamethod. */
-	cTValue *tv = lj_ctype_meta(cts, id, MM_call);
-
-	return tv != NULL;
-}
-
 int
 luaL_iscallable(lua_State *L, int idx)
 {
@@ -1111,7 +1003,7 @@ luaL_iscallable(lua_State *L, int idx)
 
 	/* Whether it is cdata with metatype with __call field. */
 	if (lua_type(L, idx) == LUA_TCDATA)
-		return luaL_cdata_iscallable(L, idx);
+		return luaTNT_cdata_hasmm(L, idx, MM_call);
 
 	/* Whether it has metatable with __call field. */
 	res = luaL_getmetafield(L, idx, "__call");
@@ -1256,7 +1148,7 @@ tarantool_lua_utils_init(struct lua_State *L)
 
 	luaL_register_type(L, LUAL_SERIALIZER, serializermeta);
 	/* Create NULL constant */
-	*(void **) luaL_pushcdata(L, CTID_P_VOID) = NULL;
+	*(void **) luaTNT_pushcdata(L, CTID_P_VOID) = NULL;
 	luaL_nil_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
 	lua_createtable(L, 0, 1);

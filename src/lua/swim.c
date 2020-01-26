@@ -42,7 +42,7 @@ lua_swim_member_event_push(struct lua_State *L, void *event)
 {
 	struct swim_on_member_event_ctx *ctx =
 		(struct swim_on_member_event_ctx *) event;
-	*(struct swim_member **) luaL_pushcdata(L, ctid_swim_member_ptr) =
+	*(struct swim_member **) luaTNT_pushcdata(L, ctid_swim_member_ptr) =
 		ctx->member;
 	lua_pushinteger(L, ctx->events);
 	return 2;
@@ -71,7 +71,7 @@ lua_swim_new(struct lua_State *L)
 	struct swim *s = swim_new(generation);
 	if (s == NULL)
 		return luaT_push_nil_and_error(L);
-	*(struct swim **) luaL_pushcdata(L, ctid_swim_ptr) = s;
+	*(struct swim **) luaTNT_pushcdata(L, ctid_swim_ptr) = s;
 	return 1;
 }
 

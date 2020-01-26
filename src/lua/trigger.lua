@@ -1,8 +1,6 @@
 local fun = require('fun')
 local log = require('log')
 
-local table_clear = require('table.clear')
-
 --
 -- Checks that argument is a callable, i.e. a function or a table
 -- with __call metamethod.

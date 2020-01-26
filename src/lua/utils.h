@@ -45,14 +45,7 @@ extern "C" {
 #include <lua.h>
 #include <lauxlib.h> /* luaL_error */
 
-#include <lj_state.h>
-#include <lj_obj.h>
-#include <lj_ctype.h>
-#include <lj_cdata.h>
-#include <lj_cconv.h>
-#include <lj_lib.h>
-#include <lj_tab.h>
-#include <lj_meta.h>
+#include <lib_tnt_ext.h> /* standard name for lib_tnt_<lj_type>_ext.h */
 
 #include "lua/error.h"
 
@@ -74,43 +67,19 @@ extern struct ibuf *tarantool_lua_ibuf;
 /** \cond public */
 
 /**
- * @brief Push cdata of given \a ctypeid onto the stack.
- * CTypeID must be used from FFI at least once. Allocated memory returned
- * uninitialized. Only numbers and pointers are supported.
- * @param L Lua State
- * @param ctypeid FFI's CTypeID of this cdata
- * @sa luaL_checkcdata
- * @return memory associated with this cdata
- */
-LUA_API void *
-luaL_pushcdata(struct lua_State *L, uint32_t ctypeid);
-
-/**
  * @brief Checks whether the function argument idx is a cdata
  * @param L Lua State
  * @param idx stack index
  * @param ctypeid FFI's CTypeID of this cdata
- * @sa luaL_pushcdata
  * @return memory associated with this cdata
  */
 LUA_API void *
 luaL_checkcdata(struct lua_State *L, int idx, uint32_t *ctypeid);
 
 /**
- * @brief Sets finalizer function on a cdata object.
- * Equivalent to call ffi.gc(obj, function).
- * Finalizer function must be on the top of the stack.
- * @param L Lua State
- * @param idx object
- */
-LUA_API void
-luaL_setcdatagc(struct lua_State *L, int idx);
-
-/**
 * @brief Return CTypeID (FFI) of given СDATA type
 * @param L Lua State
 * @param ctypename С type name as string (e.g. "struct request" or "uint32_t")
-* @sa luaL_pushcdata
 * @sa luaL_checkcdata
 * @return CTypeID
 */
@@ -573,9 +542,8 @@ static inline bool
 luaL_isnull(struct lua_State *L, int idx)
 {
 	if (lua_type(L, idx) == LUA_TCDATA) {
-		GCcdata *cd = cdataV(L->base + idx - 1);
-		return cd->ctypeid == CTID_P_VOID &&
-			*(void **)cdataptr(cd) == NULL;
+		return luaTNT_getcdatatype(L, idx) == CTID_P_VOID &&
+			*(void**) luaTNT_getcdataptr(L, idx) == NULL;
 	}
 	return false;
 }
@@ -613,8 +581,7 @@ luaT_newthread(lua_State *L)
 		return NULL;
 	}
 	assert(L1 != NULL);
-	setthreadV(L, L->top, L1);
-	incr_top(L);
+	luaTNT_pushthread1(L, L1);
 	return L1;
 }
 

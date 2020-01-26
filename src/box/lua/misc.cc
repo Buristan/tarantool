@@ -163,11 +163,11 @@ static int
 lbox_push_tuple_format(struct lua_State *L, struct tuple_format *format)
 {
 	struct tuple_format **ptr = (struct tuple_format **)
-		luaL_pushcdata(L, CTID_STRUCT_TUPLE_FORMAT_PTR);
+		luaTNT_pushcdata(L, CTID_STRUCT_TUPLE_FORMAT_PTR);
 	*ptr = format;
 	tuple_format_ref(format);
 	lua_pushcfunction(L, lbox_tuple_format_gc);
-	luaL_setcdatagc(L, -2);
+	luaTNT_setcdatagc(L, -2);
 	return 1;
 }
 

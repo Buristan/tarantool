@@ -233,6 +233,24 @@ macro(luajit_build)
     set (luajit_ar ${CMAKE_AR} rcus)
     set (luajit_strip ${CMAKE_STRIP})
 
+    set(LIBLUAJIT_SOURCE_DIR ${PROJECT_SOURCE_DIR}/third_party/luajit)
+    set(LIBLUAJIT_EXTENTIONS ${PROJECT_SOURCE_DIR}/src/lua/extentions)
+    set(LIBLUAJIT_PATCH ${PROJECT_SOURCE_DIR}/src/lua/extentions/luajit.patch)
+    if (EXISTS "${CMAKE_SOURCE_DIR}/.git" AND GIT)
+        execute_process(COMMAND cp ${LIBLUAJIT_EXTENTIONS}/lib_tnt_luajit_ext.c ${LIBLUAJIT_SOURCE_DIR}/src/lib_tnt_ext.c
+                        COMMAND cp ${LIBLUAJIT_EXTENTIONS}/lib_tnt_luajit_ext.h ${LIBLUAJIT_SOURCE_DIR}/src/lib_tnt_ext.h
+                        COMMAND ${GIT} apply ${LIBLUAJIT_PATCH}
+                        WORKING_DIRECTORY "${LIBLUAJIT_SOURCE_DIR}" # for apply patch
+                        RESULT_VARIABLE patch_rv
+                        ERROR_VARIABLE patch_ev
+        )
+        if (NOT patch_rv STREQUAL "0")
+            message(FATAL_ERROR "${GIT} apply ${LIBLUAJIT_PATCH} failed: ${patch_ev}")
+        endif()
+    else()
+        message(FATAL_ERROR "No git available to apply patch for extensions")
+    endif()
+
     set (luajit_buildoptions
         BUILDMODE=static
         HOST_CC="${luajit_hostcc}"
@@ -257,6 +275,7 @@ macro(luajit_build)
             WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/third_party/luajit
             COMMAND $(MAKE) ${luajit_buildoptions} clean
             COMMAND $(MAKE) -C src ${luajit_buildoptions} jit/vmdef.lua libluajit.a
+            COMMAND ${GIT} apply -R ${LIBLUAJIT_PATCH}
             DEPENDS ${CMAKE_SOURCE_DIR}/CMakeCache.txt
         )
     else()
@@ -268,17 +287,20 @@ macro(luajit_build)
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/third_party/luajit ${PROJECT_BINARY_DIR}/third_party/luajit
             COMMAND $(MAKE) ${luajit_buildoptions} clean
             COMMAND $(MAKE) -C src ${luajit_buildoptions} jit/vmdef.lua libluajit.a
+            COMMAND ${GIT} apply -R ${LIBLUAJIT_PATCH}
             DEPENDS ${PROJECT_BINARY_DIR}/CMakeCache.txt ${PROJECT_BINARY_DIR}/third_party/luajit
         )
     endif()
     add_custom_target(libluajit
         DEPENDS ${PROJECT_BINARY_DIR}/third_party/luajit/src/libluajit.a
     )
+#    add_library(libluajit STATIC)
+#    add_dependencies(libluajit ${PROJECT_BINARY_DIR}/third_party/luajit/src/libluajit.a)
     add_dependencies(build_bundled_libs libluajit)
     unset (luajit_buildoptions)
     set (inc ${PROJECT_SOURCE_DIR}/third_party/luajit/src)
     install (FILES ${inc}/lua.h ${inc}/lualib.h ${inc}/lauxlib.h
-        ${inc}/luaconf.h ${inc}/lua.hpp ${inc}/luajit.h
+        ${inc}/luaconf.h ${inc}/lua.hpp ${inc}/luajit.h ${inc}/lib_tnt_ext.h
         DESTINATION ${MODULE_INCLUDEDIR})
 endmacro()
 
@@ -295,3 +317,4 @@ find_package_handle_standard_args(LuaJIT
     REQUIRED_VARS LUAJIT_INCLUDE LUAJIT_LIB)
 set(LUAJIT_INCLUDE_DIRS ${LUAJIT_INCLUDE})
 set(LUAJIT_LIBRARIES ${LUAJIT_LIB})
+

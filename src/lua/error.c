@@ -87,10 +87,10 @@ luaT_pusherror(struct lua_State *L, struct error *e)
 	error_ref(e);
 	assert(CTID_CONST_STRUCT_ERROR_REF != 0);
 	struct error **ptr = (struct error **)
-		luaL_pushcdata(L, CTID_CONST_STRUCT_ERROR_REF);
+		luaTNT_pushcdata(L, CTID_CONST_STRUCT_ERROR_REF);
 	*ptr = e;
 	lua_pushcfunction(L, luaL_error_gc);
-	luaL_setcdatagc(L, -2);
+	luaTNT_setcdatagc(L, -2);
 }
 
 int

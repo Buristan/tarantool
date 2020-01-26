@@ -666,7 +666,7 @@ netbox_decode_select(struct lua_State *L)
 	assert(key == IPROTO_DATA);
 	(void) key;
 	netbox_decode_data(L, &data, format);
-	*(const char **)luaL_pushcdata(L, ctypeid) = data;
+	*(const char **)luaTNT_pushcdata(L, ctypeid) = data;
 	return 2;
 }
 
@@ -824,7 +824,7 @@ netbox_decode_execute(struct lua_State *L)
 		assert(meta_index == 0);
 		assert(rows_index == 0);
 	}
-	*(const char **)luaL_pushcdata(L, ctypeid) = data;
+	*(const char **)luaTNT_pushcdata(L, ctypeid) = data;
 	return 2;
 }
 
@@ -880,7 +880,7 @@ netbox_decode_prepare(struct lua_State *L)
 		lua_setfield(L, -2, "metadata");
 	}
 
-	*(const char **)luaL_pushcdata(L, ctypeid) = data;
+	*(const char **)luaTNT_pushcdata(L, ctypeid) = data;
 	return 2;
 }
 

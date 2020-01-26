@@ -1,0 +1,237 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 96a9ff1..b782534 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -52,6 +52,7 @@ make_source_list(SOURCES_RUNTIME # Core runtime
+     uj_hotcnt.c
+     uj_coverage.c
+     lib/init.c
++    lib_tnt_ext.c
+ )
+ 
+ make_source_list(SOURCES_FRONTEND # Lua frontend
+@@ -501,6 +502,7 @@ install (FILES
+     lauxlib.h   # Auxiliary library's C API
+     lextlib.h   # uJIT-specific extensions of the C API
+     lua.hpp     # Convenience wrapper for C++
++    lib_tnt_ext.h # Tarantool-specific extensions of the C API
+   DESTINATION include/ujit
+     PERMISSIONS
+       OWNER_READ OWNER_WRITE
+diff --git a/src/jit/opt/mem.c b/src/jit/opt/mem.c
+index 90c5bf6..62d7eb0 100644
+--- a/src/jit/opt/mem.c
++++ b/src/jit/opt/mem.c
+@@ -307,7 +307,7 @@ int lj_opt_fwd_href_nokey(jit_State *J)
+   return 1;  /* No conflict. Can fold to niltv. */
+ }
+ 
+-/* Check whether there's no aliasing NEWREF for the left operand. */
++/* Check whether there's no aliasing NEWREF/table.clear for the left operand. */
+ int lj_opt_fwd_tptr(jit_State *J, IRRef lim)
+ {
+   IRRef ta = fins->op1;
+@@ -318,6 +318,14 @@ int lj_opt_fwd_tptr(jit_State *J, IRRef lim)
+       return 0;  /* Conflict. */
+     ref = newref->prev;
+   }
++  // ref = J->chain[IR_CALLS];
++  // while (ref > lim) {
++  //   IRIns *calls = IR(ref);
++  //   if (calls->op2 == IRCALL_lj_tab_clear &&
++  //     (ta == calls->op1 || aa_table(J, ta, calls->op1) != ALIAS_NO))
++  //     return 0;  /* Conflict. */
++  //   ref = calls->prev;
++  // }
+   return 1;  /* No conflict. Can safely FOLD/CSE. */
+ }
+ 
+diff --git a/src/lib/table.c b/src/lib/table.c
+index 50ab1e4..cdd50b4 100644
+--- a/src/lib/table.c
++++ b/src/lib/table.c
+@@ -288,6 +288,8 @@ LUALIB_API int luaopen_table(lua_State *L)
+   lua_getglobal(L, "unpack");
+   lua_setfield(L, -2, "unpack");
+ #endif
++  // uj_lib_prereg(L, LUA_TABLIBNAME ".new", luaopen_table_new, tabV(L->top-1));
++  // uj_lib_prereg(L, LUA_TABLIBNAME ".clear", luaopen_table_clear, tabV(L->top-1));
+   return 1;
+ }
+ 
+diff --git a/src/lj_tab.c b/src/lj_tab.c
+index 93b59b0..a887624 100644
+--- a/src/lj_tab.c
++++ b/src/lj_tab.c
+@@ -242,6 +242,17 @@ GCtab* lj_tab_dup(lua_State *L, const GCtab *kt) {
+   return t;
+ }
+ 
++// /* Clear a table. */
++// void lj_tab_clear(GCtab *t)
++// {
++//   clearapart(t);
++//   if (t->hmask > 0) {
++//     Node *node = t->node;
++//     t->freetop = &node[t->hmask + 1];
++//     clearhpart(t);
++//   }
++// }
++
+ /* Free a table.
+ */
+ void lj_tab_free(global_State *g, GCtab *t) {
+diff --git a/src/uj_lib.c b/src/uj_lib.c
+index cda7edb..197564b 100644
+--- a/src/uj_lib.c
++++ b/src/uj_lib.c
+@@ -213,6 +213,37 @@ void uj_lib_register(lua_State *L, const char *libname, const uint8_t *p,
+ 	}
+ }
+ 
++// /* Push internal function on the stack. */
++// GCfunc *lj_lib_pushcc(lua_State *L, lua_CFunction f, int id, int n)
++// {
++//   GCfunc *fn;
++//   lua_pushcclosure(L, f, n);
++//   fn = funcV(L->top - 1);
++//   fn->c.ffid = (uint8_t)id;
++//   fn->c.pc = &G(L)->bc_cfunc_int;
++//   return fn;
++// }
++// 
++// void uj_lib_prereg(lua_State *L, const char *name, lua_CFunction f, GCtab *env)
++// {
++//   luaL_findtable(L, LUA_REGISTRYINDEX, "_PRELOAD", 4);
++//   lua_pushcfunction(L, f);
++//   /* NOBARRIER: The function is new (marked white). */
++//   funcV(L->top - 1)->c.env = env;
++//   lua_setfield(L, -2, name);
++//   L->top--;
++// }
++// 
++// int uj_lib_postreg(lua_State *L, lua_CFunction cf, int id, const char *name)
++// {
++//   GCfunc *fn = lj_lib_pushcc(L, cf, id, 0);
++//   GCtab *t = curr_func(L)->c.env;  /* Reference to parent table. */
++//   setfuncV(L, lj_tab_setstr(L, t, uj_str_new(L, name, strlen(name))), fn);
++//   lj_gc_anybarriert(L, t);
++//   setfuncV(L, L->top++, fn);
++//   return 1;
++// }
++
+ /* -- Type checks --------------------------------------------------------- */
+ 
+ GCstr *uj_lib_checkstr(lua_State *L, unsigned int narg)
+diff --git a/src/uj_vmstate.h b/src/uj_vmstate.h
+index 7bdcd2c..eadb5ae 100644
+--- a/src/uj_vmstate.h
++++ b/src/uj_vmstate.h
+@@ -86,7 +86,7 @@ struct vmstate_context {
+ /* Retrieve current VM state. */
+ static LJ_AINLINE enum vmstate uj_vmstate_get(const volatile vmstate_t *st)
+ {
+-	return ~(*st);
++	return (enum vmstate)~(*st);
+ }
+ 
+ /* Set VM state to vmst. */
+diff --git a/src/utils/strscan.c b/src/utils/strscan.c
+index 38d0680..0a46e1d 100644
+--- a/src/utils/strscan.c
++++ b/src/utils/strscan.c
+@@ -132,7 +132,7 @@ static StrScanFmt strscan_hex(const uint8_t *p, FpConv *o,
+     break;
+   }
+ 
+-  /* Reduce range then convert to double. */
++  /* Reduce range, then convert to double. */
+   if ((x & U64x(c0000000,0000000))) { x = (x >> 2) | (x & 3); ex2 += 2; }
+   strscan_double(x, o, ex2, neg);
+   return fmt;
+@@ -325,6 +325,49 @@ static StrScanFmt strscan_dec(const uint8_t *p, FpConv *o,
+   return fmt;
+ }
+ 
++/* Parse binary number. */
++static StrScanFmt strscan_bin(const uint8_t *p, FpConv *o,
++			      StrScanFmt fmt, uint32_t opt,
++			      int32_t ex2, int32_t neg, uint32_t dig)
++{
++  uint64_t x = 0;
++  uint32_t i;
++
++  if (ex2 || dig > 64) return STRSCAN_ERROR;
++
++  /* Scan binary digits. */
++  for (i = dig; i; i--, p++) {
++    if ((*p & ~1) != '0') return STRSCAN_ERROR;
++    x = (x << 1) | (*p & 1);
++  }
++
++  /* Format-specific handling. */
++  switch (fmt) {
++  case STRSCAN_INT:
++    if (!(opt & STRSCAN_OPT_TONUM) && x < 0x80000000u+neg) {
++      o->i = neg ? -(int32_t)x : (int32_t)x;
++      return STRSCAN_INT;  /* Fast path for 32 bit integers. */
++    }
++    if (!(opt & STRSCAN_OPT_C)) { fmt = STRSCAN_NUM; break; }
++    /* fallthrough */
++  case STRSCAN_U32:
++    if (dig > 32) return STRSCAN_ERROR;
++    o->i = neg ? -(int32_t)x : (int32_t)x;
++    return STRSCAN_U32;
++  case STRSCAN_I64:
++  case STRSCAN_U64:
++    o->u = neg ? (uint64_t)-(int64_t)x : x;
++    return fmt;
++  default:
++    break;
++  }
++
++  /* Reduce range, then convert to double. */
++  if ((x & U64x(c0000000,0000000))) { x = (x >> 2) | (x & 3); ex2 += 2; }
++  strscan_double(x, o, ex2, neg);
++  return fmt;
++}
++
+ /* Scan string containing a number. Returns format. Returns value in d. */
+ StrScanFmt strscan_tonumber(const uint8_t *p, double *d, uint32_t opt) {
+   int32_t neg = 0;
+@@ -363,8 +406,11 @@ StrScanFmt strscan_tonumber(const uint8_t *p, double *d, uint32_t opt) {
+ 
+     /* Determine base and skip leading zeros. */
+     if (LJ_UNLIKELY(*p <= '0')) {
+-      if (*p == '0' && lj_char_casecmp(p[1], 'x')) {
+-        base = 16, cmask = LJ_CHAR_XDIGIT, p += 2;
++      if (*p == '0') {
++	if (lj_char_casecmp(p[1], 'x'))
++	  base = 16, cmask = LJ_CHAR_XDIGIT, p += 2;
++	else if (lj_char_casecmp(p[1], 'b'))
++	  base = 2, cmask = LJ_CHAR_DIGIT, p += 2;
+       }
+       for ( ; ; p++) {
+         if (*p == '0') {
+@@ -403,7 +449,7 @@ StrScanFmt strscan_tonumber(const uint8_t *p, double *d, uint32_t opt) {
+     }
+ 
+     /* Parse exponent. */
+-    if (lj_char_casecmp(*p, (uint32_t)(base == 16 ? 'p' : 'e'))) {
++    if (base >= 10 && lj_char_casecmp(*p, (uint32_t)(base == 16 ? 'p' : 'e'))) {
+       uint32_t xx;
+       int negx = 0;
+       fmt = STRSCAN_NUM; p++;
+@@ -464,7 +510,11 @@ StrScanFmt strscan_tonumber(const uint8_t *p, double *d, uint32_t opt) {
+ 
+     if (base == 16) {
+       fmt = strscan_hex(sp, o, fmt, opt, ex, neg, dig);
+-    } else {
++    }
++    else if (base == 2) {
++      fmt = strscan_bin(sp, o, fmt, opt, ex, neg, dig);
++    }
++    else {
+       fmt = strscan_dec(sp, o, fmt, opt, ex, neg, dig);
+     }
+ 

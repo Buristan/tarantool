@@ -12,6 +12,8 @@
 #include <lua.h>
 #include <lauxlib.h>
 
+#include <lib_tnt_ext.h> /* standard name for lib_tnt_<lj_type>_ext.h */
+
 #define STR2(x) #x
 #define STR(x) STR2(x)
 
@@ -77,7 +79,7 @@ static int
 test_pushcheck_cdata(lua_State *L)
 {
 	uint32_t uint64_ctypeid = luaL_ctypeid(L, "uint64_t");
-	*(uint64_t *) luaL_pushcdata(L, uint64_ctypeid) = 48;
+	*(uint64_t *) luaTNT_pushcdata(L, uint64_ctypeid) = 48;
 	uint32_t test_ctypeid = 0;
 	luaL_checkcdata(L, -1, &test_ctypeid);
 	lua_pushboolean(L, test_ctypeid != 0 && uint64_ctypeid == test_ctypeid);
@@ -243,7 +245,7 @@ test_pushcdata(lua_State *L)
 	if (lua_gettop(L) < 1)
 		luaL_error(L, "invalid arguments");
 	uint32_t ctypeid = lua_tointeger(L, 1);
-	void *data = luaL_pushcdata(L, ctypeid);
+	void *data = luaTNT_pushcdata(L, ctypeid);
 	lua_pushlightuserdata(L, data);
 	return 2;
 }

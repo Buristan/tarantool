@@ -83,7 +83,7 @@ ldecimal_##name(struct lua_State *L) {						\
 decimal_t *
 lua_pushdecimal(struct lua_State *L)
 {
-	decimal_t *res = luaL_pushcdata(L, CTID_DECIMAL);
+	decimal_t *res = luaTNT_pushcdata(L, CTID_DECIMAL);
 	return res;
 }
 

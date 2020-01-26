@@ -258,7 +258,7 @@ lbox_index_iterator(lua_State *L)
 		return luaT_error(L);
 
 	assert(CTID_STRUCT_ITERATOR_REF != 0);
-	struct iterator **ptr = (struct iterator **) luaL_pushcdata(L,
+	struct iterator **ptr = (struct iterator **) luaTNT_pushcdata(L,
 		CTID_STRUCT_ITERATOR_REF);
 	*ptr = it; /* NULL handled by Lua, gc also set by Lua */
 	return 1;
