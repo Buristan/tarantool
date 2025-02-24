@@ -137,7 +137,20 @@
 # tarantool/luajit uses the existing workflows as reusable ones.
 
 name: justtest
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      submodule:
+        description: Name of submodule to bump.
+        required: true
+        type: string
+      revision:
+        description: Git revision from submodule repository
+        required: true
+        type: string
+
 
 jobs:
   build:
@@ -244,6 +257,13 @@ jobs:
           #
           # https://github.com/actions/checkout/issues/485
           persist-credentials: false
+
+      - name: Optional submodule bump
+        if: ${{ inputs.submodule }}
+        uses: ./.github/actions/bump-submodule
+        with:
+          submodule: ${{ inputs.submodule }}
+          revision: ${{ inputs.revision }}
 
       # Collect submodules information before fetching them.
       #
